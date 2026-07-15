@@ -10,6 +10,7 @@ import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
+import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -36,6 +37,7 @@ import {
   REFERENCE_DISCOVERY_METHOD,
   REFERENCE_SET_CHANGE_TYPE,
   REQUIRED_RUNTIME_COMPONENT,
+  RUNTIME_COMMAND,
   RESULT_SCHEMA,
   SERVER_VERSION,
   SIGNATURE_SOURCE,
@@ -51,7 +53,7 @@ import {
   VUE_SCRIPT_LANGUAGE,
 } from "./protocol.mjs";
 
-const PLUGIN_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const PLUGIN_ROOT = PACKAGE_ROOT;
 const CONFIGURED_PROCESS_CWD = process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD]
   ? path.resolve(process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD])
   : undefined;
@@ -61,10 +63,10 @@ let vueParsingDependenciesPromise;
 
 function vueParsingDependencies() {
   if (!vueParsingDependenciesPromise) {
-    vueParsingDependenciesPromise = Promise.all([
-      import("@vue/compiler-sfc"),
-      import("typescript"),
-    ]).then(([compiler, typescript]) => ({parseVueSfc: compiler.parse, ts: typescript.default}));
+    vueParsingDependenciesPromise = Promise.all([import("@vue/compiler-sfc"), import("typescript")]).then(([compiler, typescript]) => ({
+      parseVueSfc: compiler.parse,
+      ts: typescript.default,
+    }));
   }
   return vueParsingDependenciesPromise;
 }
@@ -75,36 +77,78 @@ function positiveEnvironmentInteger(name, fallback) {
 }
 
 const CLIENT_IDLE_TIMEOUT_MS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.CLIENT_IDLE_TIMEOUT_MS, DEFAULT.CLIENT_IDLE_TIMEOUT_MS);
-const CLIENT_MINIMUM_EVICTION_AGE_MS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.CLIENT_MINIMUM_EVICTION_AGE_MS, DEFAULT.CLIENT_MINIMUM_EVICTION_AGE_MS);
+const CLIENT_MINIMUM_EVICTION_AGE_MS = positiveEnvironmentInteger(
+  ENVIRONMENT_VARIABLE.CLIENT_MINIMUM_EVICTION_AGE_MS,
+  DEFAULT.CLIENT_MINIMUM_EVICTION_AGE_MS,
+);
 const MAXIMUM_ACTIVE_CLIENTS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.MAXIMUM_ACTIVE_CLIENTS, DEFAULT.MAXIMUM_ACTIVE_CLIENTS);
 const REFERENCE_SET_TTL_MS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.REFERENCE_SET_TTL_MS, DEFAULT.REFERENCE_SET_TTL_MS);
 const MAXIMUM_REFERENCE_SETS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.MAXIMUM_REFERENCE_SETS, DEFAULT.MAXIMUM_REFERENCE_SETS);
-const MAXIMUM_CHANGED_REFERENCE_SET_MARKERS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.MAXIMUM_CHANGED_REFERENCE_SET_MARKERS, DEFAULT.MAXIMUM_CHANGED_REFERENCE_SET_MARKERS);
-const MAXIMUM_CACHED_REFERENCE_LOCATIONS = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.MAXIMUM_CACHED_REFERENCE_LOCATIONS, DEFAULT.MAXIMUM_CACHED_REFERENCE_LOCATIONS);
-const DEFAULT_REFERENCE_PAGE_SIZE = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.DEFAULT_REFERENCE_PAGE_SIZE, DEFAULT.REFERENCE_PAGE_SIZE);
-const CROSS_WORKSPACE_CONCURRENCY = positiveEnvironmentInteger(ENVIRONMENT_VARIABLE.CROSS_WORKSPACE_CONCURRENCY, DEFAULT.CROSS_WORKSPACE_CONCURRENCY);
+const MAXIMUM_CHANGED_REFERENCE_SET_MARKERS = positiveEnvironmentInteger(
+  ENVIRONMENT_VARIABLE.MAXIMUM_CHANGED_REFERENCE_SET_MARKERS,
+  DEFAULT.MAXIMUM_CHANGED_REFERENCE_SET_MARKERS,
+);
+const MAXIMUM_CACHED_REFERENCE_LOCATIONS = positiveEnvironmentInteger(
+  ENVIRONMENT_VARIABLE.MAXIMUM_CACHED_REFERENCE_LOCATIONS,
+  DEFAULT.MAXIMUM_CACHED_REFERENCE_LOCATIONS,
+);
+const DEFAULT_REFERENCE_PAGE_SIZE = positiveEnvironmentInteger(
+  ENVIRONMENT_VARIABLE.DEFAULT_REFERENCE_PAGE_SIZE,
+  DEFAULT.REFERENCE_PAGE_SIZE,
+);
+const CROSS_WORKSPACE_CONCURRENCY = positiveEnvironmentInteger(
+  ENVIRONMENT_VARIABLE.CROSS_WORKSPACE_CONCURRENCY,
+  DEFAULT.CROSS_WORKSPACE_CONCURRENCY,
+);
 const PUBLIC_TOOL_NAMES = new Set(TOOL_ORDER);
 const COLLECTION_STATUSES = new Set(Object.values(COLLECTION_STATUS));
 const PRESENTATION_MODES = new Set(Object.values(PRESENTATION_MODE));
 const AMBIGUOUS_PUBLIC_KEYS = new Set(FORBIDDEN_PUBLIC_FIELD);
 
 const symbolKinds = [
-  "File", "Module", "Namespace", "Package", "Class", "Method", "Property", "Field", "Constructor",
-  "Enum", "Interface", "Function", "Variable", "Constant", "String", "Number", "Boolean", "Array",
-  "Object", "Key", "Null", "EnumMember", "Struct", "Event", "Operator", "TypeParameter",
+  "File",
+  "Module",
+  "Namespace",
+  "Package",
+  "Class",
+  "Method",
+  "Property",
+  "Field",
+  "Constructor",
+  "Enum",
+  "Interface",
+  "Function",
+  "Variable",
+  "Constant",
+  "String",
+  "Number",
+  "Boolean",
+  "Array",
+  "Object",
+  "Key",
+  "Null",
+  "EnumMember",
+  "Struct",
+  "Event",
+  "Operator",
+  "TypeParameter",
 ];
 const diagnosticSeverities = Object.values(DIAGNOSTIC_SEVERITY);
 
 function verifyBundledRuntime() {
-  const missingComponents = Object.entries(REQUIRED_RUNTIME_COMPONENT)
-    .map(([component, relativePath]) => ({component, file: path.join(PLUGIN_ROOT, relativePath)}))
-    .filter(({file}) => !existsSync(file));
+  const missingComponents = inspectRuntimeComponents(PLUGIN_ROOT).filter(({available}) => !available);
   if (missingComponents.length > 0) {
-    const error = new Error(`Required bundled language-server components are missing. Reinstall ${PRODUCT.NAME} with npm ci before starting the MCP server.`);
+    const error = new Error(
+      `Required language-server components are missing. Reinstall ${PRODUCT.NAME} dependencies before starting the MCP server.`,
+    );
     error.code = ERROR_CODE.RUNTIME_DEPENDENCY_MISSING;
     error.details = {missingComponents};
     throw error;
   }
+}
+
+function runtimeNodeModules() {
+  return runtimeDependencyRoot(REQUIRED_RUNTIME_COMPONENT.VUE_TYPESCRIPT_PLUGIN, PLUGIN_ROOT);
 }
 
 function isObject(value) {
@@ -302,19 +346,29 @@ async function identifierAt(file, line, column) {
 
 async function rgIdentifierCandidates(root, identifier, maxCandidates, wholeIdentifier = true) {
   const startedAt = performance.now();
-  const output = await runProcess("rg", [
-    "--json", "--fixed-strings",
-    ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
-    ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
-    identifier, root,
-  ], root);
+  const output = await runProcess(
+    RUNTIME_COMMAND.RIPGREP,
+    [
+      "--json",
+      "--fixed-strings",
+      ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
+      ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
+      identifier,
+      root,
+    ],
+    root,
+  );
   const candidates = [];
   const candidateFiles = new Set();
   let totalCandidateCount = 0;
   for (const recordLine of output.split("\n")) {
     if (!recordLine) continue;
     let record;
-    try { record = JSON.parse(recordLine); } catch { continue; }
+    try {
+      record = JSON.parse(recordLine);
+    } catch {
+      continue;
+    }
     if (record.type !== "match") continue;
     const file = path.isAbsolute(record.data.path.text) ? record.data.path.text : path.resolve(root, record.data.path.text);
     const lineText = record.data.lines.text;
@@ -344,14 +398,20 @@ function languageId(file) {
   switch (path.extname(file).toLowerCase()) {
     case SOURCE_EXTENSION.TYPESCRIPT:
     case SOURCE_EXTENSION.TYPESCRIPT_MODULE:
-    case SOURCE_EXTENSION.TYPESCRIPT_COMMONJS: return LANGUAGE_ID.TYPESCRIPT;
-    case SOURCE_EXTENSION.TYPESCRIPT_REACT: return LANGUAGE_ID.TYPESCRIPT_REACT;
+    case SOURCE_EXTENSION.TYPESCRIPT_COMMONJS:
+      return LANGUAGE_ID.TYPESCRIPT;
+    case SOURCE_EXTENSION.TYPESCRIPT_REACT:
+      return LANGUAGE_ID.TYPESCRIPT_REACT;
     case SOURCE_EXTENSION.JAVASCRIPT:
     case SOURCE_EXTENSION.JAVASCRIPT_MODULE:
-    case SOURCE_EXTENSION.JAVASCRIPT_COMMONJS: return LANGUAGE_ID.JAVASCRIPT;
-    case SOURCE_EXTENSION.JAVASCRIPT_REACT: return LANGUAGE_ID.JAVASCRIPT_REACT;
-    case SOURCE_EXTENSION.VUE: return LANGUAGE_ID.VUE;
-    default: throw new Error(`Unsupported file type: ${path.extname(file) || "none"}`);
+    case SOURCE_EXTENSION.JAVASCRIPT_COMMONJS:
+      return LANGUAGE_ID.JAVASCRIPT;
+    case SOURCE_EXTENSION.JAVASCRIPT_REACT:
+      return LANGUAGE_ID.JAVASCRIPT_REACT;
+    case SOURCE_EXTENSION.VUE:
+      return LANGUAGE_ID.VUE;
+    default:
+      throw new Error(`Unsupported file type: ${path.extname(file) || "none"}`);
   }
 }
 
@@ -368,13 +428,13 @@ function findTsdk(root) {
     if (parent === current) break;
     current = parent;
   }
-  return path.dirname(path.join(PLUGIN_ROOT, REQUIRED_RUNTIME_COMPONENT.TYPESCRIPT_SERVER));
+  return path.dirname(resolveRuntimeComponent(REQUIRED_RUNTIME_COMPONENT.TYPESCRIPT_SERVER, PLUGIN_ROOT));
 }
 
 function languageServerEntry(kind) {
   return kind === LANGUAGE_ID.VUE
-    ? path.join(PLUGIN_ROOT, REQUIRED_RUNTIME_COMPONENT.VUE_LANGUAGE_SERVER)
-    : path.join(PLUGIN_ROOT, REQUIRED_RUNTIME_COMPONENT.TYPESCRIPT_LANGUAGE_SERVER);
+    ? resolveRuntimeComponent(REQUIRED_RUNTIME_COMPONENT.VUE_LANGUAGE_SERVER, PLUGIN_ROOT)
+    : resolveRuntimeComponent(REQUIRED_RUNTIME_COMPONENT.TYPESCRIPT_LANGUAGE_SERVER, PLUGIN_ROOT);
 }
 
 class TsserverBridge {
@@ -384,17 +444,9 @@ class TsserverBridge {
     this.pending = new Map();
     this.openFiles = new Set();
     this.buffer = Buffer.alloc(0);
-    const args = [
-      path.join(tsdk, "tsserver.js"),
-      "--useInferredProjectPerProjectRoot",
-      "--disableAutomaticTypingAcquisition",
-    ];
+    const args = [path.join(tsdk, "tsserver.js"), "--useInferredProjectPerProjectRoot", "--disableAutomaticTypingAcquisition"];
     if (enableVuePlugin) {
-      args.push(
-        "--globalPlugins", "@vue/typescript-plugin",
-        "--pluginProbeLocations", path.join(PLUGIN_ROOT, "node_modules"),
-        "--allowLocalPluginLoads",
-      );
+      args.push("--globalPlugins", "@vue/typescript-plugin", "--pluginProbeLocations", runtimeNodeModules(), "--allowLocalPluginLoads");
     }
     this.process = spawn(process.execPath, args, {
       cwd: processCwd(root),
@@ -496,7 +548,7 @@ class LspClient {
 
     this.process = spawn(process.execPath, [entry, "--stdio"], {
       cwd: processCwd(this.root),
-      env: {...process.env, PATH: `${path.join(PLUGIN_ROOT, "node_modules", ".bin")}${path.delimiter}${process.env.PATH || ""}`},
+      env: {...process.env, PATH: `${path.join(runtimeNodeModules(), ".bin")}${path.delimiter}${process.env.PATH || ""}`},
       stdio: ["pipe", "pipe", "pipe"],
     });
     process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] starting in ${this.root}\n`);
@@ -514,25 +566,30 @@ class LspClient {
 
     const tsdk = findTsdk(this.root);
     if (this.kind === LANGUAGE_ID.VUE) this.tsserverBridge = new TsserverBridge(this.root, tsdk, true);
-    await this.request("initialize", {
-      processId: process.pid,
-      rootUri: toUri(this.root),
-      workspaceFolders: [{uri: toUri(this.root), name: path.basename(this.root)}],
-      capabilities: {
-        textDocument: {
-          synchronization: {didSave: false, dynamicRegistration: false},
-          hover: {contentFormat: ["markdown", "plaintext"]},
-          definition: {linkSupport: true},
-          references: {},
-          documentSymbol: {hierarchicalDocumentSymbolSupport: true},
-          publishDiagnostics: {relatedInformation: true},
+    await this.request(
+      "initialize",
+      {
+        processId: process.pid,
+        rootUri: toUri(this.root),
+        workspaceFolders: [{uri: toUri(this.root), name: path.basename(this.root)}],
+        capabilities: {
+          textDocument: {
+            synchronization: {didSave: false, dynamicRegistration: false},
+            hover: {contentFormat: ["markdown", "plaintext"]},
+            definition: {linkSupport: true},
+            references: {},
+            documentSymbol: {hierarchicalDocumentSymbolSupport: true},
+            publishDiagnostics: {relatedInformation: true},
+          },
+          workspace: {symbol: {}},
         },
-        workspace: {symbol: {}},
+        initializationOptions:
+          this.kind === LANGUAGE_ID.VUE
+            ? {typescript: {tsdk}, vue: {hybridMode: false}}
+            : {tsserver: {path: path.join(tsdk, "tsserver.js")}},
       },
-      initializationOptions: this.kind === LANGUAGE_ID.VUE
-        ? {typescript: {tsdk}, vue: {hybridMode: false}}
-        : {tsserver: {path: path.join(tsdk, "tsserver.js")}},
-    }, true);
+      true,
+    );
     process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] initialized\n`);
     this.notify("initialized", {});
   }
@@ -590,7 +647,8 @@ class LspClient {
     if (message.method === "tsserver/request") {
       const params = Array.isArray(message.params?.[0]) ? message.params[0] : message.params;
       const [requestId, command, args] = params || [];
-      void this.tsserverBridge?.request(command, args)
+      void this.tsserverBridge
+        ?.request(command, args)
         .then((result) => this.notify("tsserver/response", [[requestId, result]]))
         .catch((error) => {
           process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${error.message}\n`);
@@ -684,7 +742,10 @@ class LspClient {
       };
       const timer = setTimeout(() => {
         const waiters = this.diagnosticWaiters.get(uri) || [];
-        this.diagnosticWaiters.set(uri, waiters.filter((waiter) => waiter !== wrapped));
+        this.diagnosticWaiters.set(
+          uri,
+          waiters.filter((waiter) => waiter !== wrapped),
+        );
         resolve(this.diagnosticsCache.get(uri));
       }, DIAGNOSTIC_WAIT_MS);
       this.diagnosticWaiters.set(uri, [...(this.diagnosticWaiters.get(uri) || []), wrapped]);
@@ -719,9 +780,7 @@ class LspClient {
 const clients = new Map();
 
 function clientIsBusy(client) {
-  return client.pending.size > 0 ||
-    client.diagnosticWaiters.size > 0 ||
-    (client.tsserverBridge?.pending.size || 0) > 0;
+  return client.pending.size > 0 || client.diagnosticWaiters.size > 0 || (client.tsserverBridge?.pending.size || 0) > 0;
 }
 
 function closeClientEntry(key, entry) {
@@ -780,7 +839,7 @@ async function clientForFile(fileInput, rootInput) {
     if (!rootInput) throw error;
     const root = await existingDirectory(rootInput);
     const basename = path.basename(fileInput);
-    const matches = (await runProcess("rg", ["--files", "--glob", `**/${basename}`, root], root))
+    const matches = (await runProcess(RUNTIME_COMMAND.RIPGREP, ["--files", "--glob", `**/${basename}`, root], root))
       .split("\n")
       .filter(Boolean)
       .slice(0, DEFAULT.FILE_SUGGESTION_COUNT)
@@ -904,9 +963,10 @@ async function vueTemplateImportPositions(file, line, column, identifier) {
   if (queryOffset < descriptor.template.loc.start.offset || queryOffset > descriptor.template.loc.end.offset) return [];
   const positions = [];
   for (const block of [descriptor.script, descriptor.scriptSetup].filter(Boolean)) {
-    const scriptKind = block.lang === VUE_SCRIPT_LANGUAGE.JAVASCRIPT || block.lang === VUE_SCRIPT_LANGUAGE.JAVASCRIPT_REACT
-      ? ts.ScriptKind.JS
-      : ts.ScriptKind.TS;
+    const scriptKind =
+      block.lang === VUE_SCRIPT_LANGUAGE.JAVASCRIPT || block.lang === VUE_SCRIPT_LANGUAGE.JAVASCRIPT_REACT
+        ? ts.ScriptKind.JS
+        : ts.ScriptKind.TS;
     const sourceFile = ts.createSourceFile(file, block.content, ts.ScriptTarget.Latest, true, scriptKind);
     for (const node of importedBindingNodes(sourceFile, identifier, ts)) {
       positions.push(displayPositionAtTextOffset(text, block.loc.start.offset + node.getStart(sourceFile)));
@@ -1007,17 +1067,19 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
       for (const file of workspaceConfigurationFiles(result.context.workspaceRoot, context.repositoryRoot)) configurationFiles.add(file);
       if (result.via === INTERNAL_RESOLUTION_SOURCE.UNRESOLVED) {
         unresolvedCandidateCount++;
-        unresolvedCandidates.push(unresolvedReference(
-          candidateLocation,
-          token.identifier,
-          result,
-          result.project?.kind === TYPESCRIPT_PROJECT_KIND.INFERRED
-            ? UNRESOLVED_REFERENCE_REASON.CANDIDATE_OPENED_IN_INFERRED_TYPESCRIPT_PROJECT
-            : result.failure
-              ? UNRESOLVED_REFERENCE_REASON.TYPESCRIPT_SERVER_REQUEST_FAILED
-              : UNRESOLVED_REFERENCE_REASON.DEFINITION_TOOLS_RETURNED_NO_LOCATION,
-          result.failure,
-        ));
+        unresolvedCandidates.push(
+          unresolvedReference(
+            candidateLocation,
+            token.identifier,
+            result,
+            result.project?.kind === TYPESCRIPT_PROJECT_KIND.INFERRED
+              ? UNRESOLVED_REFERENCE_REASON.CANDIDATE_OPENED_IN_INFERRED_TYPESCRIPT_PROJECT
+              : result.failure
+                ? UNRESOLVED_REFERENCE_REASON.TYPESCRIPT_SERVER_REQUEST_FAILED
+                : UNRESOLVED_REFERENCE_REASON.DEFINITION_TOOLS_RETURNED_NO_LOCATION,
+            result.failure,
+          ),
+        );
         return undefined;
       }
       if (!result.definitions.some((definition) => targetKeys.has(locationKey(definition)))) {
@@ -1027,13 +1089,15 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
       return {...candidateLocation, via: INTERNAL_RESOLUTION_SOURCE.CROSS_WORKSPACE_DEFINITION};
     } catch (error) {
       unresolvedCandidateCount++;
-      unresolvedCandidates.push(unresolvedReference(
-        candidateLocation,
-        token.identifier,
-        undefined,
-        UNRESOLVED_REFERENCE_REASON.CANDIDATE_ANALYSIS_FAILED,
-        error instanceof Error ? error.message : String(error),
-      ));
+      unresolvedCandidates.push(
+        unresolvedReference(
+          candidateLocation,
+          token.identifier,
+          undefined,
+          UNRESOLVED_REFERENCE_REASON.CANDIDATE_ANALYSIS_FAILED,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
       return undefined;
     }
   });
@@ -1047,10 +1111,11 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
     rejectedCandidatesByReason: {definitionMismatch: definitionMismatchCount},
     candidateScanTruncated: search.truncated,
     unresolvedCandidateCount,
-    unresolvedCandidates: unresolvedCandidates.sort((left, right) =>
-      left.file.localeCompare(right.file) ||
-      left.range.start.line - right.range.start.line ||
-      left.range.start.column - right.range.start.column,
+    unresolvedCandidates: unresolvedCandidates.sort(
+      (left, right) =>
+        left.file.localeCompare(right.file) ||
+        left.range.start.line - right.range.start.line ||
+        left.range.start.column - right.range.start.column,
     ),
     candidateFiles: [...new Set(search.candidates.map((candidate) => candidate.file))],
     configurationFiles: [...configurationFiles],
@@ -1069,7 +1134,8 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
 async function collectReferences(context, line, column, includeDeclaration, crossWorkspace, maxCandidates) {
   const token = await identifierAt(context.file, line, column);
   const nativeResult = await context.client.textRequest("textDocument/references", context.file, {
-    position: lspPosition(line, column), context: {includeDeclaration},
+    position: lspPosition(line, column),
+    context: {includeDeclaration},
   });
   const nativeReferences = normalizeLocations(nativeResult).map((location) => ({...location, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP}));
   const cross = crossWorkspace
@@ -1103,9 +1169,8 @@ async function collectReferences(context, line, column, includeDeclaration, cros
   const nativeReferencesForResult = includeDeclaration
     ? nativeReferences
     : nativeReferences.filter((location) => !declarationKeys.has(locationKey(location)));
-  const verifiedCrossWorkspace = cross.references.filter((location) =>
-    !nativeKeys.has(locationKey(location)) &&
-    (includeDeclaration || !declarationKeys.has(locationKey(location))),
+  const verifiedCrossWorkspace = cross.references.filter(
+    (location) => !nativeKeys.has(locationKey(location)) && (includeDeclaration || !declarationKeys.has(locationKey(location))),
   );
   const all = dedupeLocations([...nativeReferencesForResult, ...verifiedCrossWorkspace]);
   const collectionTruncated = cross.candidateScanTruncated;
@@ -1124,7 +1189,14 @@ async function collectReferences(context, line, column, includeDeclaration, cros
     unresolvedCandidates: cross.unresolvedCandidates,
     collectionTruncated,
     referenceFiles: groupedReferenceFiles(all),
-    evidenceFiles: [...new Set([context.file, ...nativeReferences.map((reference) => reference.file), ...cross.candidateFiles, ...cross.configurationFiles])],
+    evidenceFiles: [
+      ...new Set([
+        context.file,
+        ...nativeReferences.map((reference) => reference.file),
+        ...cross.candidateFiles,
+        ...cross.configurationFiles,
+      ]),
+    ],
     performance: {
       ...cross.performance,
       residentSetBytesAfterCollection: process.memoryUsage().rss,
@@ -1186,22 +1258,31 @@ async function fingerprintFiles(files) {
 async function changedFingerprintFiles(fingerprints) {
   const checked = await mapLimit(fingerprints, DEFAULT.FILE_FINGERPRINT_CONCURRENCY, async (fingerprint) => ({
     file: fingerprint.file,
-    changed: await contentFingerprint(fingerprint.file) !== fingerprint.sha256,
+    changed: (await contentFingerprint(fingerprint.file)) !== fingerprint.sha256,
   }));
   return checked.filter((item) => item.changed).map((item) => item.file);
 }
 
 async function repositorySourceInventory(repositoryRoot) {
   const startedAt = performance.now();
-  const output = await runProcess("rg", [
-    "--files",
-    ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
-    ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
+  const output = await runProcess(
+    RUNTIME_COMMAND.RIPGREP,
+    [
+      "--files",
+      ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
+      ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
+      repositoryRoot,
+    ],
     repositoryRoot,
-  ], repositoryRoot);
-  const files = [...new Set(output.split("\n").filter(Boolean).map((file) =>
-    path.isAbsolute(file) ? path.resolve(file) : path.resolve(repositoryRoot, file),
-  ))].sort();
+  );
+  const files = [
+    ...new Set(
+      output
+        .split("\n")
+        .filter(Boolean)
+        .map((file) => (path.isAbsolute(file) ? path.resolve(file) : path.resolve(repositoryRoot, file))),
+    ),
+  ].sort();
   const entries = await mapLimit(files, DEFAULT.INVENTORY_STAT_CONCURRENCY, async (file) => {
     try {
       const metadata = await stat(file, {bigint: true});
@@ -1300,10 +1381,7 @@ function pruneReferenceSets(now = Date.now()) {
     }
   }
   const oldest = [...referenceSetsById.entries()].sort((left, right) => left[1].lastUsedAt - right[1].lastUsedAt);
-  let cachedLocations = [...referenceSetsById.values()].reduce(
-    (total, entry) => total + entry.analysis.references.length,
-    0,
-  );
+  let cachedLocations = [...referenceSetsById.values()].reduce((total, entry) => total + entry.analysis.references.length, 0);
   while (
     (referenceSetsById.size > MAXIMUM_REFERENCE_SETS || cachedLocations > MAXIMUM_CACHED_REFERENCE_LOCATIONS) &&
     referenceSetsById.size > 1 &&
@@ -1381,7 +1459,12 @@ async function getReferenceSet(context, line, column, includeDeclaration, crossW
   referenceSetsById.set(id, entry);
   referenceSetIdByKey.set(key, id);
   pruneReferenceSets(now);
-  return {...entry, reused: false, freshnessCheckedAt: completedAt, freshnessCheckMilliseconds: stableCollection.repositorySourceInventory.elapsedMilliseconds};
+  return {
+    ...entry,
+    reused: false,
+    freshnessCheckedAt: completedAt,
+    freshnessCheckMilliseconds: stableCollection.repositorySourceInventory.elapsedMilliseconds,
+  };
 }
 
 async function getReferenceSetById(id) {
@@ -1457,9 +1540,7 @@ async function semanticWorkspaceSymbols(root, query, maxCandidates) {
     try {
       const context = await clientForFile(file, root);
       const raw = await context.client.textRequest("textDocument/documentSymbol", context.file);
-      return flattenDocumentSymbols(raw || [], context.file).filter((symbol) =>
-        symbol.name.toLowerCase().includes(query.toLowerCase()),
-      );
+      return flattenDocumentSymbols(raw || [], context.file).filter((symbol) => symbol.name.toLowerCase().includes(query.toLowerCase()));
     } catch {
       unresolvedFileCount++;
       return [];
@@ -1520,33 +1601,20 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
   const [definitionResult, hover, referenceSet, rawDiagnostics] = await Promise.all([
     definitionsAt(context.file, context.boundaryRoot, line, column),
     context.client.textRequest("textDocument/hover", context.file, {position: lspPosition(line, column)}),
-    getReferenceSet(
-      context,
-      line,
-      column,
-      options.includeDeclaration,
-      options.crossWorkspace ?? true,
-      options.maxCandidates,
-    ),
+    getReferenceSet(context, line, column, options.includeDeclaration, options.crossWorkspace ?? true, options.maxCandidates),
     options.includeDiagnostics ? context.client.diagnostics(context.file) : Promise.resolve([]),
   ]);
-  const diagnostics = options.includeDiagnostics
-    ? normalizeDiagnostics(rawDiagnostics.items, options.maxDiagnostics)
-    : [];
+  const diagnostics = options.includeDiagnostics ? normalizeDiagnostics(rawDiagnostics.items, options.maxDiagnostics) : [];
   let effectiveHover = hover;
-  let signatureSource = hoverText(hover?.contents)
-    ? SIGNATURE_SOURCE.QUERY_POSITION_HOVER
-    : SIGNATURE_SOURCE.NOT_REPORTED;
+  let signatureSource = hoverText(hover?.contents) ? SIGNATURE_SOURCE.QUERY_POSITION_HOVER : SIGNATURE_SOURCE.NOT_REPORTED;
   let signatureDefinition;
   if (signatureSource === SIGNATURE_SOURCE.NOT_REPORTED) {
     for (const definition of definitionResult.definitions) {
       try {
         const definitionContext = await clientForFile(definition.file, context.repositoryRoot);
-        const definitionHover = await definitionContext.client.textRequest(
-          "textDocument/hover",
-          definitionContext.file,
-          {position: lspPosition(definition.range.start.line, definition.range.start.column)},
-        );
+        const definitionHover = await definitionContext.client.textRequest("textDocument/hover", definitionContext.file, {
+          position: lspPosition(definition.range.start.line, definition.range.start.column),
+        });
         if (!hoverText(definitionHover?.contents)) continue;
         effectiveHover = definitionHover;
         signatureSource = SIGNATURE_SOURCE.RESOLVED_DEFINITION_HOVER;
@@ -1597,14 +1665,16 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
       collectionTruncated: referenceAnalysis.collectionTruncated,
       performance: referenceAnalysis.performance,
     },
-    diagnostics: options.includeDiagnostics ? {
-      items: diagnostics,
-      totalCount: rawDiagnostics.items.length,
-      itemsReturnedAreSubset: rawDiagnostics.items.length > diagnostics.length,
-      documentVersion: rawDiagnostics.documentVersion,
-      reportedDocumentVersion: rawDiagnostics.reportedDocumentVersion,
-      freshness: rawDiagnostics.freshness,
-    } : {included: false},
+    diagnostics: options.includeDiagnostics
+      ? {
+          items: diagnostics,
+          totalCount: rawDiagnostics.items.length,
+          itemsReturnedAreSubset: rawDiagnostics.items.length > diagnostics.length,
+          documentVersion: rawDiagnostics.documentVersion,
+          reportedDocumentVersion: rawDiagnostics.reportedDocumentVersion,
+          freshness: rawDiagnostics.freshness,
+        }
+      : {included: false},
   };
 }
 
@@ -1623,7 +1693,8 @@ function groupedReferenceFiles(references) {
 
 function publicReferenceMethod(method) {
   if (method === INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP) return REFERENCE_DISCOVERY_METHOD.OWNING_WORKSPACE_LANGUAGE_SERVER;
-  if (method === INTERNAL_RESOLUTION_SOURCE.CROSS_WORKSPACE_DEFINITION) return REFERENCE_DISCOVERY_METHOD.DEFINITION_MATCH_FROM_ANOTHER_WORKSPACE;
+  if (method === INTERNAL_RESOLUTION_SOURCE.CROSS_WORKSPACE_DEFINITION)
+    return REFERENCE_DISCOVERY_METHOD.DEFINITION_MATCH_FROM_ANOTHER_WORKSPACE;
   return method;
 }
 
@@ -1636,9 +1707,10 @@ function publicDefinitionMethod(method) {
 
 function referenceFacts(audit) {
   const summary = audit.referenceSummary;
-  const classifiedTextMatches = summary.semanticallyMatchedCandidateCount +
-    summary.rejectedCandidateCount + summary.unresolvedCandidateCount;
-  const allTextMatchesAccountedFor = !summary.collectionTruncated &&
+  const classifiedTextMatches =
+    summary.semanticallyMatchedCandidateCount + summary.rejectedCandidateCount + summary.unresolvedCandidateCount;
+  const allTextMatchesAccountedFor =
+    !summary.collectionTruncated &&
     summary.scannedCandidateCount === summary.totalTextualCandidateCount &&
     classifiedTextMatches === summary.scannedCandidateCount;
   return {
@@ -1776,27 +1848,19 @@ async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions,
   const matchingDefinitions = normalizedHint
     ? exactDefinitions.filter((candidate) => candidate.file.replaceAll("\\", "/").toLowerCase().includes(normalizedHint))
     : exactDefinitions;
-  const selectedDefinitions = maxDefinitions === undefined
-    ? matchingDefinitions
-    : matchingDefinitions.slice(0, maxDefinitions);
-  const audits = await mapLimit(selectedDefinitions, DEFAULT.NAMED_DEFINITION_CONCURRENCY, (definition) => auditSymbolAtPosition(
-    definition.file,
-    resolvedRoot,
-    definition.range.start.line,
-    definition.range.start.column,
-    {
+  const selectedDefinitions = maxDefinitions === undefined ? matchingDefinitions : matchingDefinitions.slice(0, maxDefinitions);
+  const audits = await mapLimit(selectedDefinitions, DEFAULT.NAMED_DEFINITION_CONCURRENCY, (definition) =>
+    auditSymbolAtPosition(definition.file, resolvedRoot, definition.range.start.line, definition.range.start.column, {
       includeDeclaration,
       maxCandidates,
       includeDiagnostics: false,
       maxDiagnostics: undefined,
-    },
-  ));
+    }),
+  );
   const stoppedByDefinitionLimit = selectedDefinitions.length < matchingDefinitions.length;
   const stoppedByCandidateLimit = discovery.candidateScanTruncated || audits.some((audit) => audit.referenceSummary.collectionTruncated);
-  const unresolvedCount = discovery.unresolvedFileCount + audits.reduce(
-    (total, audit) => total + audit.referenceSummary.unresolvedCandidateCount,
-    0,
-  );
+  const unresolvedCount =
+    discovery.unresolvedFileCount + audits.reduce((total, audit) => total + audit.referenceSummary.unresolvedCandidateCount, 0);
   return {
     resolvedRoot,
     discovery,
@@ -1816,12 +1880,14 @@ async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions,
 }
 
 function toolResult(tool, body) {
-  const data = JSON.parse(JSON.stringify({
-    server: {name: PRODUCT.NAME, version: SERVER_VERSION},
-    resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION},
-    tool,
-    ...body,
-  }));
+  const data = JSON.parse(
+    JSON.stringify({
+      server: {name: PRODUCT.NAME, version: SERVER_VERSION},
+      resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION},
+      tool,
+      ...body,
+    }),
+  );
   validatePublicResult(data);
   return {
     _meta: {resultSchema: RESULT_SCHEMA.NAME, resultSchemaVersion: RESULT_SCHEMA.VERSION},
@@ -1870,8 +1936,8 @@ function validatePublicResult(data) {
     }
     if (isObject(value.textSearch)) {
       const search = value.textSearch;
-      const accountedFor = search.matchesToRequestedSymbol + search.matchesToDifferentSymbols +
-        search.matchesWhoseDefinitionCouldNotBeResolved;
+      const accountedFor =
+        search.matchesToRequestedSymbol + search.matchesToDifferentSymbols + search.matchesWhoseDefinitionCouldNotBeResolved;
       if (accountedFor !== search.matchesChecked) {
         throw new Error(`${data.tool} returned inconsistent text-match accounting`);
       }
@@ -1924,13 +1990,15 @@ const readOnly = {readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 try {
   verifyBundledRuntime();
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({
-    error: {
-      code: error?.code || ERROR_CODE.RUNTIME_DEPENDENCY_MISSING,
-      message: error instanceof Error ? error.message : String(error),
-      details: error?.details,
-    },
-  })}\n`);
+  process.stderr.write(
+    `${JSON.stringify({
+      error: {
+        code: error?.code || ERROR_CODE.RUNTIME_DEPENDENCY_MISSING,
+        message: error instanceof Error ? error.message : String(error),
+        details: error?.details,
+      },
+    })}\n`,
+  );
   process.exit(PROCESS_EXIT_CODE.FAILURE);
 }
 
@@ -1949,364 +2017,673 @@ const server = new McpServer(
   },
 );
 
-server.registerTool(TOOL.DOCUMENT_SYMBOLS, {
-  description: "Provides declarations and nested members reported for one file. Evidence scope: document structure. Continue with lsp_definition, lsp_hover, lsp_count_references, or lsp_audit_symbol using an exact position.",
-  inputSchema: {...fileSchema, maxResults: z.number().int().min(1).optional().describe("Optional number of symbols to return; omit to return all collected symbols")},
-  annotations: readOnly,
-}, async ({file, root, maxResults}) => {
-  const tool = TOOL.DOCUMENT_SYMBOLS;
-  try {
-    const context = await clientForFile(file, root);
-    const raw = await context.client.textRequest("textDocument/documentSymbol", context.file);
-    const all = flattenDocumentSymbols(raw || [], context.file);
-    const symbols = limit(all, maxResults);
-    return toolResult(tool, {
-      request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
-      result: {symbols, symbolsFound: all.length},
-      collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
-      presentation: {mode: symbols.length === all.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET, itemsAvailable: all.length, itemsReturned: symbols.length, itemsReturnedAreSubset: symbols.length < all.length},
-      continueWith: [
-        {tool: TOOL.DEFINITION, provides: "the exact definition for a source position"},
-        {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for a source position"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.WORKSPACE_SYMBOLS, {
-  description: "Provides declaration-shaped symbols whose names contain a query across a workspace or repository. Evidence scope: symbol discovery. Continue with lsp_definition, lsp_count_named_symbol, or lsp_audit_named_symbol using the exact symbol name.",
-  inputSchema: {
-    root: z.string().describe("Absolute workspace or repository root"),
-    query: z.string().min(1).describe("Exact or partial symbol name"),
-    maxResults: z.number().int().min(1).optional().describe("Optional number of symbols to return; omit to return all collected symbols"),
-    maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to inspect; omit to inspect all matches"),
+server.registerTool(
+  TOOL.DOCUMENT_SYMBOLS,
+  {
+    description:
+      "Provides declarations and nested members reported for one file. Evidence scope: document structure. Continue with lsp_definition, lsp_hover, lsp_count_references, or lsp_audit_symbol using an exact position.",
+    inputSchema: {
+      ...fileSchema,
+      maxResults: z.number().int().min(1).optional().describe("Optional number of symbols to return; omit to return all collected symbols"),
+    },
+    annotations: readOnly,
   },
-  annotations: readOnly,
-}, async ({root, query, maxResults, maxCandidates}) => {
-  const tool = TOOL.WORKSPACE_SYMBOLS;
-  try {
-    const resolvedRoot = await existingDirectory(root);
-    const semantic = await semanticWorkspaceSymbols(resolvedRoot, query, maxCandidates);
-    const all = dedupeLocations(semantic.symbols);
-    const symbols = limit(all, maxResults);
-    const stoppedByLimit = semantic.candidateScanTruncated;
-    return toolResult(tool, {
-      request: {root: resolvedRoot, query, searchScope: "repository", candidateLimit: normalizedLimit(maxCandidates), resultLimit: normalizedLimit(maxResults)},
-      result: {symbols, symbolsFound: all.length, textMatchesFound: semantic.totalTextualCandidateCount, textMatchesChecked: semantic.candidateCount, sourceFilesWhoseSymbolsCouldNotBeRead: semantic.unresolvedFileCount},
-      collection: {status: collectionStatus({stoppedByLimit, unresolvedCount: semantic.unresolvedFileCount}), stoppedByLimit},
-      presentation: {mode: symbols.length === all.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET, itemsAvailable: all.length, itemsReturned: symbols.length, itemsReturnedAreSubset: symbols.length < all.length},
-      continueWith: [
-        {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "definition and reference counts for an exact symbol name"},
-        {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity and a reference summary by file"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.DEFINITION, {
-  description: "Provides the exact definitions resolved for one source position. Evidence scope: symbol identity at that position. Continue with lsp_hover, lsp_count_references, or lsp_audit_symbol.",
-  inputSchema: {...positionSchema, maxResults: z.number().int().min(1).optional().describe("Optional number of definitions to return; omit to return all resolved definitions")},
-  annotations: readOnly,
-}, async ({file, root, line, column, maxResults}) => {
-  const tool = TOOL.DEFINITION;
-  try {
-    const resolved = await definitionsAt(file, root, line, column);
-    const definitions = limit(resolved.definitions, maxResults);
-    return toolResult(tool, {
-      request: {file: resolved.context.file, line, column, searchScope: "source-position", resultLimit: normalizedLimit(maxResults)},
-      result: {definitionMatch: resolved.definitions.length > 0 ? DEFINITION_MATCH.RESOLVED : DEFINITION_MATCH.UNRESOLVED, definitions, definitionsFound: resolved.definitions.length, resolutionMethod: publicDefinitionMethod(resolved.via), attemptedMethods: resolved.attempts?.map(publicDefinitionMethod), failure: resolved.failure},
-      collection: {status: resolved.definitions.length > 0 ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL, stoppedByLimit: false},
-      presentation: {mode: definitions.length === resolved.definitions.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET, itemsAvailable: resolved.definitions.length, itemsReturned: definitions.length, itemsReturnedAreSubset: definitions.length < resolved.definitions.length},
-      continueWith: [
-        {tool: TOOL.HOVER, provides: "the inferred type and documentation at the same position"},
-        {tool: TOOL.COUNT_REFERENCES, provides: "verified reference counts for the resolved symbol"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.HOVER, {
-  description: "Provides inferred type information and documentation for one source position. Evidence scope: language-server type information. Continue with lsp_definition or lsp_audit_symbol.",
-  inputSchema: positionSchema,
-  annotations: readOnly,
-}, async ({file, root, line, column}) => {
-  const tool = TOOL.HOVER;
-  try {
-    const context = await clientForFile(file, root);
-    const hover = await context.client.textRequest("textDocument/hover", context.file, {position: lspPosition(line, column)});
-    return toolResult(tool, {
-      request: {file: context.file, line, column, searchScope: "source-position"},
-      result: {typeAndDocumentation: hoverText(hover?.contents), range: hover?.range ? displayRange(hover.range) : undefined, informationFound: !!hover?.contents},
-      collection: {status: hover?.contents ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL, stoppedByLimit: false},
-      presentation: {mode: PRESENTATION_MODE.ALL_ITEMS, itemsAvailable: hover?.contents ? 1 : 0, itemsReturned: hover?.contents ? 1 : 0, itemsReturnedAreSubset: false},
-      continueWith: [
-        {tool: TOOL.DEFINITION, provides: "the exact definition behind this position"},
-        {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for this position"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.DIAGNOSTICS, {
-  description: "Provides versioned diagnostics reported by the owning language server for one file. Only result.diagnosticsForCurrentDocument is verified evidence. When the language server does not confirm the current version, that field is null and result.evidence.status is untrusted.",
-  inputSchema: {...fileSchema, maxResults: z.number().int().min(1).optional().describe("Optional number of diagnostics to return; omit to return all reported diagnostics")},
-  annotations: readOnly,
-}, async ({file, root, maxResults}) => {
-  const tool = TOOL.DIAGNOSTICS;
-  try {
-    const context = await clientForFile(file, root);
-    const report = await context.client.diagnostics(context.file);
-    const diagnostics = normalizeDiagnostics(report.items, maxResults);
-    const versionConfirmed = report.freshness === DIAGNOSTIC_FRESHNESS.CURRENT;
-    const diagnosticReport = {
-      items: diagnostics,
-      itemsReported: report.items.length,
-      itemsReturnedAreSubset: diagnostics.length < report.items.length,
-    };
-    return toolResult(tool, {
-      request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
-      result: {
-        evidence: {
-          status: versionConfirmed ? EVIDENCE_STATUS.VERIFIED : EVIDENCE_STATUS.UNTRUSTED,
-          reason: diagnosticEvidenceReason(report.freshness),
+  async ({file, root, maxResults}) => {
+    const tool = TOOL.DOCUMENT_SYMBOLS;
+    try {
+      const context = await clientForFile(file, root);
+      const raw = await context.client.textRequest("textDocument/documentSymbol", context.file);
+      const all = flattenDocumentSymbols(raw || [], context.file);
+      const symbols = limit(all, maxResults);
+      return toolResult(tool, {
+        request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
+        result: {symbols, symbolsFound: all.length},
+        collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
+        presentation: {
+          mode: symbols.length === all.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET,
+          itemsAvailable: all.length,
+          itemsReturned: symbols.length,
+          itemsReturnedAreSubset: symbols.length < all.length,
         },
-        document: {
-          version: report.documentVersion,
-          contentFingerprintAlgorithm: FINGERPRINT_ALGORITHM.SHA_256,
-          contentFingerprint: report.documentContentFingerprint,
+        continueWith: [
+          {tool: TOOL.DEFINITION, provides: "the exact definition for a source position"},
+          {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for a source position"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.WORKSPACE_SYMBOLS,
+  {
+    description:
+      "Provides declaration-shaped symbols whose names contain a query across a workspace or repository. Evidence scope: symbol discovery. Continue with lsp_definition, lsp_count_named_symbol, or lsp_audit_named_symbol using the exact symbol name.",
+    inputSchema: {
+      root: z.string().describe("Absolute workspace or repository root"),
+      query: z.string().min(1).describe("Exact or partial symbol name"),
+      maxResults: z.number().int().min(1).optional().describe("Optional number of symbols to return; omit to return all collected symbols"),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to inspect; omit to inspect all matches"),
+    },
+    annotations: readOnly,
+  },
+  async ({root, query, maxResults, maxCandidates}) => {
+    const tool = TOOL.WORKSPACE_SYMBOLS;
+    try {
+      const resolvedRoot = await existingDirectory(root);
+      const semantic = await semanticWorkspaceSymbols(resolvedRoot, query, maxCandidates);
+      const all = dedupeLocations(semantic.symbols);
+      const symbols = limit(all, maxResults);
+      const stoppedByLimit = semantic.candidateScanTruncated;
+      return toolResult(tool, {
+        request: {
+          root: resolvedRoot,
+          query,
+          searchScope: "repository",
+          candidateLimit: normalizedLimit(maxCandidates),
+          resultLimit: normalizedLimit(maxResults),
         },
-        diagnosticsForCurrentDocument: versionConfirmed ? diagnosticReport : null,
-        unconfirmedDiagnosticReport: versionConfirmed ? undefined : {
-          ...diagnosticReport,
-          languageServerReportedDocumentVersion: report.reportedDocumentVersion,
-          freshness: report.freshness,
+        result: {
+          symbols,
+          symbolsFound: all.length,
+          textMatchesFound: semantic.totalTextualCandidateCount,
+          textMatchesChecked: semantic.candidateCount,
+          sourceFilesWhoseSymbolsCouldNotBeRead: semantic.unresolvedFileCount,
         },
-        waitedMilliseconds: report.waitedMilliseconds,
-      },
-      collection: {status: versionConfirmed ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL, stoppedByLimit: false, currentDocumentVersionConfirmed: versionConfirmed},
-      presentation: {mode: diagnostics.length === report.items.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET, itemsAvailable: report.items.length, itemsReturned: diagnostics.length, itemsReturnedAreSubset: diagnostics.length < report.items.length},
-      continueWith: [
-        {tool: TOOL.DEFINITION, provides: "the definition associated with a diagnostic position"},
-        {tool: TOOL.HOVER, provides: "type information associated with a diagnostic position"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.COUNT_TEXT_MATCHES, {
-  description: "Counts exact identifier text matches and containing files without starting semantic definition verification. Evidence scope: repository text only. Use this result to estimate work before lsp_count_named_symbol, lsp_audit_named_symbol, or a position-based reference tool.",
-  inputSchema: {
-    root: z.string().describe("Absolute workspace or repository root"),
-    symbol: z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/).describe("Exact JavaScript or TypeScript identifier text to count"),
+        collection: {status: collectionStatus({stoppedByLimit, unresolvedCount: semantic.unresolvedFileCount}), stoppedByLimit},
+        presentation: {
+          mode: symbols.length === all.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET,
+          itemsAvailable: all.length,
+          itemsReturned: symbols.length,
+          itemsReturnedAreSubset: symbols.length < all.length,
+        },
+        continueWith: [
+          {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "definition and reference counts for an exact symbol name"},
+          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity and a reference summary by file"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
   },
-  annotations: readOnly,
-}, async ({root, symbol}) => {
-  const tool = TOOL.COUNT_TEXT_MATCHES;
-  try {
-    const resolvedRoot = await existingDirectory(root);
-    const search = await rgIdentifierCandidates(resolvedRoot, symbol, 1);
-    return toolResult(tool, {
-      request: {root: resolvedRoot, symbol, searchScope: "repository", evidenceType: EVIDENCE_TYPE.EXACT_IDENTIFIER_TEXT_MATCH},
-      result: {
-        matchesFound: search.totalCandidateCount,
-        filesContainingMatches: search.totalCandidateFileCount,
-        semanticVerificationPerformed: false,
-        textSearchMilliseconds: search.elapsedMilliseconds,
-      },
-      collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
-      presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
-      continueWith: [
-        {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "exact-definition and verified-reference counts for a named symbol"},
-        {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signatures, and verified-reference summaries"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+);
 
-server.registerTool(TOOL.COUNT_NAMED_SYMBOL, {
-  description: "Provides exact-definition and verified-reference counts for a symbol name with a small response. Evidence scope: repository symbol and text-match accounting. Continue with lsp_audit_named_symbol or lsp_references.",
-  inputSchema: {
-    root: z.string().describe("Absolute workspace or repository root"),
-    symbol: z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/).describe("Exact JavaScript or TypeScript identifier"),
-    fileHint: z.string().optional().describe("Optional path fragment used to select exact homonymous definitions"),
-    maxDefinitions: z.number().int().min(1).optional().describe("Optional number of exact homonymous definitions to analyze; omit to analyze all"),
-    includeDeclaration: z.boolean().default(true),
-    maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+server.registerTool(
+  TOOL.DEFINITION,
+  {
+    description:
+      "Provides the exact definitions resolved for one source position. Evidence scope: symbol identity at that position. Continue with lsp_hover, lsp_count_references, or lsp_audit_symbol.",
+    inputSchema: {
+      ...positionSchema,
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Optional number of definitions to return; omit to return all resolved definitions"),
+    },
+    annotations: readOnly,
   },
-  annotations: readOnly,
-}, async (args) => {
-  const tool = TOOL.COUNT_NAMED_SYMBOL;
-  try {
-    const operation = await collectNamedSymbolAudits(args);
-    return toolResult(tool, {
-      request: {root: operation.resolvedRoot, symbol: args.symbol, fileHint: args.fileHint, searchScope: "repository", definitionLimit: normalizedLimit(args.maxDefinitions), candidateLimit: normalizedLimit(args.maxCandidates), includeDeclaration: args.includeDeclaration},
-      result: {requestedSymbol: args.symbol, exactDefinitionsFound: operation.exactDefinitions.length, definitionsMatchingFileFilter: operation.matchingDefinitions.length, definitions: operation.audits.map((audit, index) => countSummary(audit, operation.selectedDefinitions[index]))},
-      collection: operation.collection,
-      presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
-      continueWith: [
-        {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
-        {tool: TOOL.REFERENCES, provides: "a page of verified source locations using a selected definition position"},
-        ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected definition referenceSetId"}]
-          : []),
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.COUNT_REFERENCES, {
-  description: "Provides verified-reference counts for the symbol at one exact position with a small response. Evidence scope: workspace and repository reference accounting. Continue with lsp_audit_symbol or lsp_references.",
-  inputSchema: {...positionSchema, includeDeclaration: z.boolean().default(true), crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"), maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all")},
-  annotations: readOnly,
-}, async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates}) => {
-  const tool = TOOL.COUNT_REFERENCES;
-  try {
-    const audit = await auditSymbolAtPosition(file, root, line, column, {includeDeclaration, crossWorkspace, maxCandidates, includeDiagnostics: false, maxDiagnostics: undefined});
-    const summary = countSummary(audit);
-    return toolResult(tool, {
-      request: {file: path.resolve(file), line, column, searchScope: crossWorkspace ? "repository" : "workspace", candidateLimit: normalizedLimit(maxCandidates), includeDeclaration},
-      result: summary,
-      collection: summary.collection,
-      presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
-      continueWith: [
-        {tool: TOOL.AUDIT_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
-        {tool: TOOL.REFERENCES, provides: "a page of verified source locations"},
-        ...(audit.referenceSummary.unresolvedCandidateCount > 0
-          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this referenceSetId"}]
-          : []),
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
-
-server.registerTool(TOOL.AUDIT_NAMED_SYMBOL, {
-  description: "Provides a composed semantic evidence summary for an exact symbol name. It reuses compatible count collections and returns definition identity, signatures, reference counts, and files containing references. Continue with lsp_references for source locations.",
-  inputSchema: {
-    root: z.string().describe("Absolute workspace or repository root"),
-    symbol: z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/).describe("Exact JavaScript or TypeScript identifier"),
-    fileHint: z.string().optional().describe("Optional path fragment used to select exact homonymous definitions"),
-    maxDefinitions: z.number().int().min(1).optional().describe("Optional number of exact homonymous definitions to analyze; omit to analyze all"),
-    includeDeclaration: z.boolean().default(true),
-    maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+  async ({file, root, line, column, maxResults}) => {
+    const tool = TOOL.DEFINITION;
+    try {
+      const resolved = await definitionsAt(file, root, line, column);
+      const definitions = limit(resolved.definitions, maxResults);
+      return toolResult(tool, {
+        request: {file: resolved.context.file, line, column, searchScope: "source-position", resultLimit: normalizedLimit(maxResults)},
+        result: {
+          definitionMatch: resolved.definitions.length > 0 ? DEFINITION_MATCH.RESOLVED : DEFINITION_MATCH.UNRESOLVED,
+          definitions,
+          definitionsFound: resolved.definitions.length,
+          resolutionMethod: publicDefinitionMethod(resolved.via),
+          attemptedMethods: resolved.attempts?.map(publicDefinitionMethod),
+          failure: resolved.failure,
+        },
+        collection: {
+          status: resolved.definitions.length > 0 ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL,
+          stoppedByLimit: false,
+        },
+        presentation: {
+          mode: definitions.length === resolved.definitions.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET,
+          itemsAvailable: resolved.definitions.length,
+          itemsReturned: definitions.length,
+          itemsReturnedAreSubset: definitions.length < resolved.definitions.length,
+        },
+        continueWith: [
+          {tool: TOOL.HOVER, provides: "the inferred type and documentation at the same position"},
+          {tool: TOOL.COUNT_REFERENCES, provides: "verified reference counts for the resolved symbol"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
   },
-  annotations: readOnly,
-}, async (args) => {
-  const tool = TOOL.AUDIT_NAMED_SYMBOL;
-  try {
-    const operation = await collectNamedSymbolAudits(args);
-    return toolResult(tool, {
-      request: {root: operation.resolvedRoot, symbol: args.symbol, fileHint: args.fileHint, searchScope: "repository", definitionLimit: normalizedLimit(args.maxDefinitions), candidateLimit: normalizedLimit(args.maxCandidates), includeDeclaration: args.includeDeclaration},
-      result: {requestedSymbol: args.symbol, exactDefinitionsFound: operation.exactDefinitions.length, definitionsMatchingFileFilter: operation.matchingDefinitions.length, audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index]))},
-      collection: operation.collection,
-      presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
-      continueWith: [
-        {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
-        {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
-        ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected audit referenceSetId"}]
-          : []),
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+);
 
-server.registerTool(TOOL.AUDIT_SYMBOL, {
-  description: "Provides a composed semantic evidence summary for the symbol at one exact position. It reuses compatible count collections and returns definition identity, signature, reference counts, and files containing references. Continue with lsp_references for source locations.",
-  inputSchema: {...positionSchema, includeDeclaration: z.boolean().default(true), crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"), maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all")},
-  annotations: readOnly,
-}, async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates}) => {
-  const tool = TOOL.AUDIT_SYMBOL;
-  try {
-    const audit = await auditSymbolAtPosition(file, root, line, column, {includeDeclaration, crossWorkspace, maxCandidates, includeDiagnostics: false, maxDiagnostics: undefined});
-    const summary = auditSummary(audit);
-    return toolResult(tool, {
-      request: {file: path.resolve(file), line, column, searchScope: crossWorkspace ? "repository" : "workspace", candidateLimit: normalizedLimit(maxCandidates), includeDeclaration},
-      result: summary,
-      collection: summary.collection,
-      presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
-      continueWith: [
-        {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
-        {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
-        ...(audit.referenceSummary.unresolvedCandidateCount > 0
-          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this audit referenceSetId"}]
-          : []),
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+server.registerTool(
+  TOOL.HOVER,
+  {
+    description:
+      "Provides inferred type information and documentation for one source position. Evidence scope: language-server type information. Continue with lsp_definition or lsp_audit_symbol.",
+    inputSchema: positionSchema,
+    annotations: readOnly,
+  },
+  async ({file, root, line, column}) => {
+    const tool = TOOL.HOVER;
+    try {
+      const context = await clientForFile(file, root);
+      const hover = await context.client.textRequest("textDocument/hover", context.file, {position: lspPosition(line, column)});
+      return toolResult(tool, {
+        request: {file: context.file, line, column, searchScope: "source-position"},
+        result: {
+          typeAndDocumentation: hoverText(hover?.contents),
+          range: hover?.range ? displayRange(hover.range) : undefined,
+          informationFound: !!hover?.contents,
+        },
+        collection: {status: hover?.contents ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL, stoppedByLimit: false},
+        presentation: {
+          mode: PRESENTATION_MODE.ALL_ITEMS,
+          itemsAvailable: hover?.contents ? 1 : 0,
+          itemsReturned: hover?.contents ? 1 : 0,
+          itemsReturnedAreSubset: false,
+        },
+        continueWith: [
+          {tool: TOOL.DEFINITION, provides: "the exact definition behind this position"},
+          {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for this position"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
 
-server.registerTool(TOOL.REFERENCES, {
-  description: "Provides the first page of verified source locations for the symbol at one exact position. Collection samples the repository source inventory before and after analysis. Read collection.status as complete, limited, partial, or failed. Continue with lsp_reference_page when presentation.nextCursor is present.",
-  inputSchema: {...positionSchema, includeDeclaration: z.boolean().default(true), crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"), maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"), pageSize: z.number().int().min(1).optional().describe(`Number of reference locations to return in this page; default ${DEFAULT.REFERENCE_PAGE_SIZE}`)},
-  annotations: readOnly,
-}, async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates, pageSize}) => {
-  const tool = TOOL.REFERENCES;
-  try {
-    const context = await clientForFile(file, root);
-    const entry = await getReferenceSet(context, line, column, includeDeclaration, crossWorkspace, maxCandidates);
-    const facts = factsForReferenceSet(entry, entry.reused);
-    const page = presentReferenceSet(entry, 0, pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
-    return toolResult(tool, {
-      request: {file: context.file, line, column, searchScope: crossWorkspace ? "repository" : "workspace", candidateLimit: normalizedLimit(maxCandidates), pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE, includeDeclaration},
-      result: {identifier: entry.analysis.identifier, references: facts.references, textSearch: facts.textSearch, unresolvedReferences: facts.unresolvedReferences, referenceFiles: facts.referenceFiles, referenceSetId: entry.id, locations: page.references},
-      collection: facts.collection,
-      presentation: page.presentation,
-      continueWith: [
-        ...(page.presentation.nextCursor ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}] : []),
-        ...(entry.analysis.unresolvedCandidates.length > 0 ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}] : []),
-        {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+server.registerTool(
+  TOOL.DIAGNOSTICS,
+  {
+    description:
+      "Provides versioned diagnostics reported by the owning language server for one file. Only result.diagnosticsForCurrentDocument is verified evidence. When the language server does not confirm the current version, that field is null and result.evidence.status is untrusted.",
+    inputSchema: {
+      ...fileSchema,
+      maxResults: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Optional number of diagnostics to return; omit to return all reported diagnostics"),
+    },
+    annotations: readOnly,
+  },
+  async ({file, root, maxResults}) => {
+    const tool = TOOL.DIAGNOSTICS;
+    try {
+      const context = await clientForFile(file, root);
+      const report = await context.client.diagnostics(context.file);
+      const diagnostics = normalizeDiagnostics(report.items, maxResults);
+      const versionConfirmed = report.freshness === DIAGNOSTIC_FRESHNESS.CURRENT;
+      const diagnosticReport = {
+        items: diagnostics,
+        itemsReported: report.items.length,
+        itemsReturnedAreSubset: diagnostics.length < report.items.length,
+      };
+      return toolResult(tool, {
+        request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
+        result: {
+          evidence: {
+            status: versionConfirmed ? EVIDENCE_STATUS.VERIFIED : EVIDENCE_STATUS.UNTRUSTED,
+            reason: diagnosticEvidenceReason(report.freshness),
+          },
+          document: {
+            version: report.documentVersion,
+            contentFingerprintAlgorithm: FINGERPRINT_ALGORITHM.SHA_256,
+            contentFingerprint: report.documentContentFingerprint,
+          },
+          diagnosticsForCurrentDocument: versionConfirmed ? diagnosticReport : null,
+          unconfirmedDiagnosticReport: versionConfirmed
+            ? undefined
+            : {
+                ...diagnosticReport,
+                languageServerReportedDocumentVersion: report.reportedDocumentVersion,
+                freshness: report.freshness,
+              },
+          waitedMilliseconds: report.waitedMilliseconds,
+        },
+        collection: {
+          status: versionConfirmed ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL,
+          stoppedByLimit: false,
+          currentDocumentVersionConfirmed: versionConfirmed,
+        },
+        presentation: {
+          mode: diagnostics.length === report.items.length ? PRESENTATION_MODE.ALL_ITEMS : PRESENTATION_MODE.SUBSET,
+          itemsAvailable: report.items.length,
+          itemsReturned: diagnostics.length,
+          itemsReturnedAreSubset: diagnostics.length < report.items.length,
+        },
+        continueWith: [
+          {tool: TOOL.DEFINITION, provides: "the definition associated with a diagnostic position"},
+          {tool: TOOL.HOVER, provides: "type information associated with a diagnostic position"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
 
-server.registerTool(TOOL.REFERENCE_PAGE, {
-  description: "Provides one page from a previously collected verified reference set after checking direct content fingerprints and the repository source inventory. Use the referenceSetId and nextCursor returned by lsp_references or another lsp_reference_page call.",
-  inputSchema: {referenceSetId: z.string().min(1).describe("Reference-set identifier returned by lsp_references, lsp_count_references, or an audit tool"), cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous reference page"), pageSize: z.number().int().min(1).optional().describe(`Number of reference locations to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`)},
-  annotations: readOnly,
-}, async ({referenceSetId, cursor, pageSize}) => {
-  const tool = TOOL.REFERENCE_PAGE;
-  try {
-    const entry = await getReferenceSetById(referenceSetId);
-    if (!entry) throw new ReferenceSetUnavailableError(referenceSetId);
-    const facts = factsForReferenceSet(entry, true);
-    const page = presentReferenceSet(entry, Number(cursor), pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
-    return toolResult(tool, {
-      request: {referenceSetId, cursor, pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE},
-      result: {identifier: entry.analysis.identifier, references: facts.references, referenceSetId: entry.id, locations: page.references},
-      collection: facts.collection,
-      presentation: page.presentation,
-      continueWith: [
-        ...(page.presentation.nextCursor ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}] : []),
-        ...(entry.analysis.unresolvedCandidates.length > 0 ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}] : []),
-        {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
-      ],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+server.registerTool(
+  TOOL.COUNT_TEXT_MATCHES,
+  {
+    description:
+      "Counts exact identifier text matches and containing files without starting semantic definition verification. Evidence scope: repository text only. Use this result to estimate work before lsp_count_named_symbol, lsp_audit_named_symbol, or a position-based reference tool.",
+    inputSchema: {
+      root: z.string().describe("Absolute workspace or repository root"),
+      symbol: z
+        .string()
+        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
+        .describe("Exact JavaScript or TypeScript identifier text to count"),
+    },
+    annotations: readOnly,
+  },
+  async ({root, symbol}) => {
+    const tool = TOOL.COUNT_TEXT_MATCHES;
+    try {
+      const resolvedRoot = await existingDirectory(root);
+      const search = await rgIdentifierCandidates(resolvedRoot, symbol, 1);
+      return toolResult(tool, {
+        request: {root: resolvedRoot, symbol, searchScope: "repository", evidenceType: EVIDENCE_TYPE.EXACT_IDENTIFIER_TEXT_MATCH},
+        result: {
+          matchesFound: search.totalCandidateCount,
+          filesContainingMatches: search.totalCandidateFileCount,
+          semanticVerificationPerformed: false,
+          textSearchMilliseconds: search.elapsedMilliseconds,
+        },
+        collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
+        continueWith: [
+          {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "exact-definition and verified-reference counts for a named symbol"},
+          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signatures, and verified-reference summaries"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
 
-server.registerTool(TOOL.UNRESOLVED_REFERENCE_PAGE, {
-  description: "Provides one page of text-match candidates whose definition could not be resolved during a reference collection. Each candidate includes its location, owning workspace when known, attempted methods, and a literal failure reason. The reference set is freshness-checked before the page is returned.",
-  inputSchema: {referenceSetId: z.string().min(1).describe("Reference-set identifier returned by a count, audit, or reference tool"), cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous unresolved-reference page"), pageSize: z.number().int().min(1).optional().describe(`Number of unresolved candidates to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`)},
-  annotations: readOnly,
-}, async ({referenceSetId, cursor, pageSize}) => {
-  const tool = TOOL.UNRESOLVED_REFERENCE_PAGE;
-  try {
-    const entry = await getReferenceSetById(referenceSetId);
-    if (!entry) throw new ReferenceSetUnavailableError(referenceSetId);
-    const facts = factsForReferenceSet(entry, true);
-    const page = presentUnresolvedReferenceSet(entry, Number(cursor), pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
-    return toolResult(tool, {
-      request: {referenceSetId, cursor, pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE},
-      result: {identifier: entry.analysis.identifier, unresolvedReferences: facts.unresolvedReferences, referenceSetId: entry.id, candidates: page.candidates},
-      collection: facts.collection,
-      presentation: page.presentation,
-      continueWith: page.presentation.nextCursor
-        ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the next page of unresolved candidates from the same reference set"}]
-        : [{tool: TOOL.DEFINITION, provides: "a focused definition retry at an unresolved candidate position"}],
-    });
-  } catch (error) { return toolError(tool, error); }
-});
+server.registerTool(
+  TOOL.COUNT_NAMED_SYMBOL,
+  {
+    description:
+      "Provides exact-definition and verified-reference counts for a symbol name with a small response. Evidence scope: repository symbol and text-match accounting. Continue with lsp_audit_named_symbol or lsp_references.",
+    inputSchema: {
+      root: z.string().describe("Absolute workspace or repository root"),
+      symbol: z
+        .string()
+        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
+        .describe("Exact JavaScript or TypeScript identifier"),
+      fileHint: z.string().optional().describe("Optional path fragment used to select exact homonymous definitions"),
+      maxDefinitions: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Optional number of exact homonymous definitions to analyze; omit to analyze all"),
+      includeDeclaration: z.boolean().default(true),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+    },
+    annotations: readOnly,
+  },
+  async (args) => {
+    const tool = TOOL.COUNT_NAMED_SYMBOL;
+    try {
+      const operation = await collectNamedSymbolAudits(args);
+      return toolResult(tool, {
+        request: {
+          root: operation.resolvedRoot,
+          symbol: args.symbol,
+          fileHint: args.fileHint,
+          searchScope: "repository",
+          definitionLimit: normalizedLimit(args.maxDefinitions),
+          candidateLimit: normalizedLimit(args.maxCandidates),
+          includeDeclaration: args.includeDeclaration,
+        },
+        result: {
+          requestedSymbol: args.symbol,
+          exactDefinitionsFound: operation.exactDefinitions.length,
+          definitionsMatchingFileFilter: operation.matchingDefinitions.length,
+          definitions: operation.audits.map((audit, index) => countSummary(audit, operation.selectedDefinitions[index])),
+        },
+        collection: operation.collection,
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
+        continueWith: [
+          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
+          {tool: TOOL.REFERENCES, provides: "a page of verified source locations using a selected definition position"},
+          ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected definition referenceSetId"}]
+            : []),
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.COUNT_REFERENCES,
+  {
+    description:
+      "Provides verified-reference counts for the symbol at one exact position with a small response. Evidence scope: workspace and repository reference accounting. Continue with lsp_audit_symbol or lsp_references.",
+    inputSchema: {
+      ...positionSchema,
+      includeDeclaration: z.boolean().default(true),
+      crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+    },
+    annotations: readOnly,
+  },
+  async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates}) => {
+    const tool = TOOL.COUNT_REFERENCES;
+    try {
+      const audit = await auditSymbolAtPosition(file, root, line, column, {
+        includeDeclaration,
+        crossWorkspace,
+        maxCandidates,
+        includeDiagnostics: false,
+        maxDiagnostics: undefined,
+      });
+      const summary = countSummary(audit);
+      return toolResult(tool, {
+        request: {
+          file: path.resolve(file),
+          line,
+          column,
+          searchScope: crossWorkspace ? "repository" : "workspace",
+          candidateLimit: normalizedLimit(maxCandidates),
+          includeDeclaration,
+        },
+        result: summary,
+        collection: summary.collection,
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
+        continueWith: [
+          {tool: TOOL.AUDIT_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
+          {tool: TOOL.REFERENCES, provides: "a page of verified source locations"},
+          ...(audit.referenceSummary.unresolvedCandidateCount > 0
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this referenceSetId"}]
+            : []),
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.AUDIT_NAMED_SYMBOL,
+  {
+    description:
+      "Provides a composed semantic evidence summary for an exact symbol name. It reuses compatible count collections and returns definition identity, signatures, reference counts, and files containing references. Continue with lsp_references for source locations.",
+    inputSchema: {
+      root: z.string().describe("Absolute workspace or repository root"),
+      symbol: z
+        .string()
+        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/)
+        .describe("Exact JavaScript or TypeScript identifier"),
+      fileHint: z.string().optional().describe("Optional path fragment used to select exact homonymous definitions"),
+      maxDefinitions: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Optional number of exact homonymous definitions to analyze; omit to analyze all"),
+      includeDeclaration: z.boolean().default(true),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+    },
+    annotations: readOnly,
+  },
+  async (args) => {
+    const tool = TOOL.AUDIT_NAMED_SYMBOL;
+    try {
+      const operation = await collectNamedSymbolAudits(args);
+      return toolResult(tool, {
+        request: {
+          root: operation.resolvedRoot,
+          symbol: args.symbol,
+          fileHint: args.fileHint,
+          searchScope: "repository",
+          definitionLimit: normalizedLimit(args.maxDefinitions),
+          candidateLimit: normalizedLimit(args.maxCandidates),
+          includeDeclaration: args.includeDeclaration,
+        },
+        result: {
+          requestedSymbol: args.symbol,
+          exactDefinitionsFound: operation.exactDefinitions.length,
+          definitionsMatchingFileFilter: operation.matchingDefinitions.length,
+          audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index])),
+        },
+        collection: operation.collection,
+        presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
+        continueWith: [
+          {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
+          {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
+          ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected audit referenceSetId"}]
+            : []),
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.AUDIT_SYMBOL,
+  {
+    description:
+      "Provides a composed semantic evidence summary for the symbol at one exact position. It reuses compatible count collections and returns definition identity, signature, reference counts, and files containing references. Continue with lsp_references for source locations.",
+    inputSchema: {
+      ...positionSchema,
+      includeDeclaration: z.boolean().default(true),
+      crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+    },
+    annotations: readOnly,
+  },
+  async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates}) => {
+    const tool = TOOL.AUDIT_SYMBOL;
+    try {
+      const audit = await auditSymbolAtPosition(file, root, line, column, {
+        includeDeclaration,
+        crossWorkspace,
+        maxCandidates,
+        includeDiagnostics: false,
+        maxDiagnostics: undefined,
+      });
+      const summary = auditSummary(audit);
+      return toolResult(tool, {
+        request: {
+          file: path.resolve(file),
+          line,
+          column,
+          searchScope: crossWorkspace ? "repository" : "workspace",
+          candidateLimit: normalizedLimit(maxCandidates),
+          includeDeclaration,
+        },
+        result: summary,
+        collection: summary.collection,
+        presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
+        continueWith: [
+          {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
+          {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
+          ...(audit.referenceSummary.unresolvedCandidateCount > 0
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this audit referenceSetId"}]
+            : []),
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.REFERENCES,
+  {
+    description:
+      "Provides the first page of verified source locations for the symbol at one exact position. Collection samples the repository source inventory before and after analysis. Read collection.status as complete, limited, partial, or failed. Continue with lsp_reference_page when presentation.nextCursor is present.",
+    inputSchema: {
+      ...positionSchema,
+      includeDeclaration: z.boolean().default(true),
+      crossWorkspace: z.boolean().default(true).describe("Include text matches from other workspaces after definition verification"),
+      maxCandidates: z.number().int().min(1).optional().describe("Optional number of text matches to verify; omit to verify all"),
+      pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(`Number of reference locations to return in this page; default ${DEFAULT.REFERENCE_PAGE_SIZE}`),
+    },
+    annotations: readOnly,
+  },
+  async ({file, root, line, column, includeDeclaration, crossWorkspace, maxCandidates, pageSize}) => {
+    const tool = TOOL.REFERENCES;
+    try {
+      const context = await clientForFile(file, root);
+      const entry = await getReferenceSet(context, line, column, includeDeclaration, crossWorkspace, maxCandidates);
+      const facts = factsForReferenceSet(entry, entry.reused);
+      const page = presentReferenceSet(entry, 0, pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
+      return toolResult(tool, {
+        request: {
+          file: context.file,
+          line,
+          column,
+          searchScope: crossWorkspace ? "repository" : "workspace",
+          candidateLimit: normalizedLimit(maxCandidates),
+          pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE,
+          includeDeclaration,
+        },
+        result: {
+          identifier: entry.analysis.identifier,
+          references: facts.references,
+          textSearch: facts.textSearch,
+          unresolvedReferences: facts.unresolvedReferences,
+          referenceFiles: facts.referenceFiles,
+          referenceSetId: entry.id,
+          locations: page.references,
+        },
+        collection: facts.collection,
+        presentation: page.presentation,
+        continueWith: [
+          ...(page.presentation.nextCursor
+            ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}]
+            : []),
+          ...(entry.analysis.unresolvedCandidates.length > 0
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}]
+            : []),
+          {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.REFERENCE_PAGE,
+  {
+    description:
+      "Provides one page from a previously collected verified reference set after checking direct content fingerprints and the repository source inventory. Use the referenceSetId and nextCursor returned by lsp_references or another lsp_reference_page call.",
+    inputSchema: {
+      referenceSetId: z
+        .string()
+        .min(1)
+        .describe("Reference-set identifier returned by lsp_references, lsp_count_references, or an audit tool"),
+      cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous reference page"),
+      pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(`Number of reference locations to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`),
+    },
+    annotations: readOnly,
+  },
+  async ({referenceSetId, cursor, pageSize}) => {
+    const tool = TOOL.REFERENCE_PAGE;
+    try {
+      const entry = await getReferenceSetById(referenceSetId);
+      if (!entry) throw new ReferenceSetUnavailableError(referenceSetId);
+      const facts = factsForReferenceSet(entry, true);
+      const page = presentReferenceSet(entry, Number(cursor), pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
+      return toolResult(tool, {
+        request: {referenceSetId, cursor, pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE},
+        result: {identifier: entry.analysis.identifier, references: facts.references, referenceSetId: entry.id, locations: page.references},
+        collection: facts.collection,
+        presentation: page.presentation,
+        continueWith: [
+          ...(page.presentation.nextCursor
+            ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}]
+            : []),
+          ...(entry.analysis.unresolvedCandidates.length > 0
+            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}]
+            : []),
+          {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
+        ],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.UNRESOLVED_REFERENCE_PAGE,
+  {
+    description:
+      "Provides one page of text-match candidates whose definition could not be resolved during a reference collection. Each candidate includes its location, owning workspace when known, attempted methods, and a literal failure reason. The reference set is freshness-checked before the page is returned.",
+    inputSchema: {
+      referenceSetId: z.string().min(1).describe("Reference-set identifier returned by a count, audit, or reference tool"),
+      cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous unresolved-reference page"),
+      pageSize: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(`Number of unresolved candidates to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`),
+    },
+    annotations: readOnly,
+  },
+  async ({referenceSetId, cursor, pageSize}) => {
+    const tool = TOOL.UNRESOLVED_REFERENCE_PAGE;
+    try {
+      const entry = await getReferenceSetById(referenceSetId);
+      if (!entry) throw new ReferenceSetUnavailableError(referenceSetId);
+      const facts = factsForReferenceSet(entry, true);
+      const page = presentUnresolvedReferenceSet(entry, Number(cursor), pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
+      return toolResult(tool, {
+        request: {referenceSetId, cursor, pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE},
+        result: {
+          identifier: entry.analysis.identifier,
+          unresolvedReferences: facts.unresolvedReferences,
+          referenceSetId: entry.id,
+          candidates: page.candidates,
+        },
+        collection: facts.collection,
+        presentation: page.presentation,
+        continueWith: page.presentation.nextCursor
+          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the next page of unresolved candidates from the same reference set"}]
+          : [{tool: TOOL.DEFINITION, provides: "a focused definition retry at an unresolved candidate position"}],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
 async function shutdown() {
   clearInterval(clientCleanupTimer);
   for (const entry of clients.values()) entry.client.close();

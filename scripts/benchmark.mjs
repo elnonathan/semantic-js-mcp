@@ -29,19 +29,25 @@ for (const count of counts) {
   const src = path.join(workspace, "src");
   await mkdir(src, {recursive: true});
   await writeFile(path.join(workspace, "package.json"), JSON.stringify({private: true, type: "module"}));
-  await writeFile(path.join(workspace, "tsconfig.json"), JSON.stringify({
-    compilerOptions: {strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler"},
-    include: ["src/**/*.ts"],
-  }));
+  await writeFile(
+    path.join(workspace, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler"},
+      include: ["src/**/*.ts"],
+    }),
+  );
   const symbol = `benchmarkTarget${count}`;
   const target = path.join(src, "target.ts");
   await writeFile(target, `export function ${symbol}(value: number): number { return value + 1; }\n`);
-  await writeFile(path.join(src, "usage.ts"), [
-    `import {${symbol}} from "./target.js";`,
-    "export const values = [",
-    ...Array.from({length: count}, (_, index) => `  ${symbol}(${index}),`),
-    "];",
-  ].join("\n"));
+  await writeFile(
+    path.join(src, "usage.ts"),
+    [
+      `import {${symbol}} from "./target.js";`,
+      "export const values = [",
+      ...Array.from({length: count}, (_, index) => `  ${symbol}(${index}),`),
+      "];",
+    ].join("\n"),
+  );
 
   const client = new Client({name: `${PRODUCT.NAME}-benchmark`, version: "1.0.0"});
   const transport = new StdioClientTransport({command: process.execPath, args: [path.join(root, "server.mjs")], cwd: root});

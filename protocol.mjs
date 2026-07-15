@@ -20,6 +20,68 @@ export const PRODUCT = Object.freeze({
   DISPLAY_NAME: "Semantic JS MCP",
 });
 
+export const CLI_COMMAND = Object.freeze({
+  SERVE: "serve",
+  DOCTOR: "doctor",
+  HELP: "help",
+  VERSION: "version",
+});
+
+export const CLI_ARGUMENT = Object.freeze({
+  HELP: "--help",
+  HELP_SHORT: "-h",
+  VERSION: "--version",
+  VERSION_SHORT: "-v",
+  YAML: "--yaml",
+});
+
+export const CLI_MESSAGE = Object.freeze({
+  UNKNOWN_COMMAND: "Unknown command",
+  UNKNOWN_ARGUMENT: "Unknown argument",
+  UNKNOWN_OPTION: "Unknown option",
+});
+
+export const DOCTOR_CHECK = Object.freeze({
+  NODE_RUNTIME: "node-runtime",
+  RUNTIME_COMPONENTS: "runtime-components",
+  RIPGREP: "ripgrep",
+  MCP_STARTUP: "mcp-startup",
+  TOOL_DISCOVERY: "tool-discovery",
+  TYPESCRIPT_SYMBOLS: "typescript-symbols",
+  TYPESCRIPT_REFERENCES: "typescript-references",
+  DIAGNOSTIC_FRESHNESS: "diagnostic-freshness",
+  VUE_SYMBOLS: "vue-symbols",
+  VUE_TEMPLATE_DEFINITION: "vue-template-definition",
+});
+
+export const DOCTOR_REASON = Object.freeze({
+  CHECK_COMPLETED: "check-completed",
+  UNSUPPORTED_NODE_RUNTIME: "unsupported-node-runtime",
+  RUNTIME_COMPONENT_MISSING: "runtime-component-missing",
+  RIPGREP_UNAVAILABLE: "ripgrep-unavailable",
+  MCP_STARTUP_FAILED: "mcp-startup-failed",
+  TOOL_SET_DIFFERENT: "tool-set-different-from-protocol",
+  TYPESCRIPT_SYMBOL_NOT_FOUND: "typescript-symbol-not-found",
+  TYPESCRIPT_REFERENCE_ACCOUNTING_INCOMPLETE: "typescript-reference-accounting-incomplete",
+  DIAGNOSTICS_NOT_CONFIRMED: "diagnostics-not-confirmed-for-current-document",
+  VUE_SYMBOL_NOT_FOUND: "vue-symbol-not-found",
+  VUE_TEMPLATE_DEFINITION_UNRESOLVED: "vue-template-definition-unresolved",
+  CHECK_FAILED: "check-failed",
+});
+
+export const RUNTIME_COMMAND = Object.freeze({
+  RIPGREP: "rg",
+});
+
+export const RUNTIME_REQUIREMENT = Object.freeze({
+  MINIMUM_NODE_MAJOR: 22,
+});
+
+export const PACKAGE_PATH = Object.freeze({
+  SERVER: "server.mjs",
+  CLI: "cli.mjs",
+});
+
 export const ENVIRONMENT_VARIABLE = Object.freeze({
   PROCESS_CWD: "SEMANTIC_JS_MCP_PROCESS_CWD",
   CLIENT_IDLE_TIMEOUT_MS: "SEMANTIC_JS_MCP_CLIENT_IDLE_TIMEOUT_MS",
@@ -34,8 +96,13 @@ export const ENVIRONMENT_VARIABLE = Object.freeze({
   BENCHMARK_COUNTS: "SEMANTIC_JS_MCP_BENCHMARK_COUNTS",
 });
 
-export const WORKSPACE_CONFIGURATION_FILE_NAMES = Object.freeze(["package.json", "tsconfig.json", "jsconfig.json"]);
-export const WORKSPACE_ROOT_MARKER_FILE_NAMES = Object.freeze(["package.json", "tsconfig.json"]);
+export const CONFIGURATION_FILE = Object.freeze({
+  PACKAGE: "package.json",
+  TYPESCRIPT: "tsconfig.json",
+  JAVASCRIPT: "jsconfig.json",
+});
+export const WORKSPACE_CONFIGURATION_FILE_NAMES = Object.freeze(Object.values(CONFIGURATION_FILE));
+export const WORKSPACE_ROOT_MARKER_FILE_NAMES = Object.freeze([CONFIGURATION_FILE.PACKAGE, CONFIGURATION_FILE.TYPESCRIPT]);
 export const SOURCE_EXTENSION = Object.freeze({
   TYPESCRIPT: ".ts",
   TYPESCRIPT_REACT: ".tsx",
@@ -152,6 +219,7 @@ export const ERROR_CODE = Object.freeze({
   REFERENCE_SET_NOT_FOUND_OR_EXPIRED: "REFERENCE_SET_NOT_FOUND_OR_EXPIRED",
   REPOSITORY_CHANGED_DURING_COLLECTION: "REPOSITORY_CHANGED_DURING_COLLECTION",
   RUNTIME_DEPENDENCY_MISSING: "RUNTIME_DEPENDENCY_MISSING",
+  RUNTIME_REQUIREMENT_UNMET: "RUNTIME_REQUIREMENT_UNMET",
 });
 
 export const EVIDENCE_TYPE = Object.freeze({
@@ -201,6 +269,20 @@ export const CI_EXIT_CODE = Object.freeze({
   BLOCKED: 3,
 });
 
+export const DOCTOR_DISTRIBUTION_ACCEPTED_STATUS = Object.freeze([CI_STATUS.PASS, CI_STATUS.UNTRUSTED]);
+
+export const DOCTOR_STATUS_PRIORITY = Object.freeze({
+  [CI_STATUS.PASS]: 0,
+  [CI_STATUS.UNTRUSTED]: 1,
+  [CI_STATUS.FAIL]: 2,
+  [CI_STATUS.BLOCKED]: 3,
+});
+
+export const RUNTIME_REQUIREMENT_KIND = Object.freeze({
+  NODE: "node",
+  RUNTIME_COMPONENT: "runtime-component",
+});
+
 export const CI_REASON = Object.freeze({
   COMPLETE_EVIDENCE: "complete-evidence",
   VERIFIED_DIAGNOSTIC_ERRORS: "verified-current-document-has-error-diagnostics",
@@ -226,10 +308,11 @@ export const RESULT_SCHEMA = Object.freeze({
 export const SERVER_VERSION = "0.8.0";
 
 export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
-  TYPESCRIPT_LANGUAGE_SERVER: "node_modules/typescript-language-server/lib/cli.mjs",
-  VUE_LANGUAGE_SERVER: "node_modules/@vue/language-server/bin/vue-language-server.js",
-  TYPESCRIPT_SERVER: "node_modules/typescript/lib/tsserver.js",
-  VUE_SFC_COMPILER: "node_modules/@vue/compiler-sfc/dist/compiler-sfc.cjs.js",
+  TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server/lib/cli.mjs",
+  VUE_LANGUAGE_SERVER: "@vue/language-server/bin/vue-language-server.js",
+  TYPESCRIPT_SERVER: "typescript/lib/tsserver.js",
+  VUE_SFC_COMPILER: "@vue/compiler-sfc/dist/compiler-sfc.cjs.js",
+  VUE_TYPESCRIPT_PLUGIN: "@vue/typescript-plugin/package.json",
 });
 
 export const RUNTIME_STATUS = Object.freeze({
@@ -244,6 +327,7 @@ export const PROCESS_EXIT_CODE = Object.freeze({
 
 export const NODE_EVENT = Object.freeze({
   ERROR: "error",
+  CLOSE: "close",
 });
 
 export const DEFAULT = Object.freeze({
@@ -268,4 +352,5 @@ export const DEFAULT = Object.freeze({
   MCP_TOOL_TIMEOUT_SECONDS: 300,
   INVENTORY_STAT_CONCURRENCY: 32,
   COLLECTION_STABILITY_ATTEMPTS: 2,
+  PROCESS_ARGUMENT_OFFSET: 2,
 });

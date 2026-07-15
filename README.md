@@ -26,6 +26,8 @@ Version `0.8.0` is a pre-release. See the [roadmap](ROADMAP.md) for areas under 
 - Source discovery and language selection include `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, and `.vue` files.
 - Run `npm run check:runtime` to report every required component and its resolved file path.
 
+The package exposes a `semantic-js-mcp` executable. `semantic-js-mcp serve` starts the stdio MCP server, and `semantic-js-mcp doctor` verifies the installed Node runtime, ripgrep, resolved provider paths, MCP startup, tool discovery, TypeScript reference accounting, diagnostic freshness, and Vue navigation.
+
 ## Development Setup
 
 From a source checkout:
@@ -34,6 +36,7 @@ From a source checkout:
 npm ci
 npm run check
 npm run check:runtime
+npm run doctor
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
@@ -56,25 +59,38 @@ For an MCP host that accepts a direct stdio configuration, point it at the check
 
 The bundled [`.mcp.json`](.mcp.json) provides the relative-path configuration used when the repository is installed as a Codex plugin.
 
+When the package executable is available on the host's `PATH`, the equivalent stdio configuration is:
+
+```json
+{
+  "mcpServers": {
+    "semantic-js-mcp": {
+      "command": "semantic-js-mcp",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
 ## Tool Graph
 
 Tools are ordered from smaller responses to deeper evidence:
 
-| Tool | Provides | Typical continuation |
-| --- | --- | --- |
-| `lsp_document_symbols` | Structure for one file | `lsp_definition`, `lsp_audit_symbol` |
-| `lsp_workspace_symbols` | Symbol-name discovery | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
-| `lsp_definition` | Definition resolution at a position | `lsp_hover`, `lsp_count_references` |
-| `lsp_hover` | Inferred type and documentation | `lsp_definition`, `lsp_audit_symbol` |
-| `lsp_diagnostics` | Focused diagnostics for one file | `lsp_definition`, `lsp_hover` |
-| `lsp_count_text_matches` | Exact identifier text count without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
-| `lsp_count_named_symbol` | Definition and reference counts by name | `lsp_audit_named_symbol`, `lsp_references` |
-| `lsp_count_references` | Reference counts at a position | `lsp_audit_symbol`, `lsp_references` |
-| `lsp_audit_named_symbol` | Composed summary by symbol name | `lsp_references` |
-| `lsp_audit_symbol` | Composed summary at a position | `lsp_references` |
-| `lsp_references` | First page of verified locations | `lsp_reference_page` |
-| `lsp_reference_page` | A later page from the same collection | `lsp_definition` |
-| `lsp_unresolved_reference_page` | Unresolved candidates with locations and literal reasons | `lsp_definition` |
+| Tool                            | Provides                                                  | Typical continuation                               |
+| ------------------------------- | --------------------------------------------------------- | -------------------------------------------------- |
+| `lsp_document_symbols`          | Structure for one file                                    | `lsp_definition`, `lsp_audit_symbol`               |
+| `lsp_workspace_symbols`         | Symbol-name discovery                                     | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
+| `lsp_definition`                | Definition resolution at a position                       | `lsp_hover`, `lsp_count_references`                |
+| `lsp_hover`                     | Inferred type and documentation                           | `lsp_definition`, `lsp_audit_symbol`               |
+| `lsp_diagnostics`               | Focused diagnostics for one file                          | `lsp_definition`, `lsp_hover`                      |
+| `lsp_count_text_matches`        | Exact identifier text count without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
+| `lsp_count_named_symbol`        | Definition and reference counts by name                   | `lsp_audit_named_symbol`, `lsp_references`         |
+| `lsp_count_references`          | Reference counts at a position                            | `lsp_audit_symbol`, `lsp_references`               |
+| `lsp_audit_named_symbol`        | Composed summary by symbol name                           | `lsp_references`                                   |
+| `lsp_audit_symbol`              | Composed summary at a position                            | `lsp_references`                                   |
+| `lsp_references`                | First page of verified locations                          | `lsp_reference_page`                               |
+| `lsp_reference_page`            | A later page from the same collection                     | `lsp_definition`                                   |
+| `lsp_unresolved_reference_page` | Unresolved candidates with locations and literal reasons  | `lsp_definition`                                   |
 
 Composite audits reuse the same internal definition, hover, and reference primitives as the narrow tools. Compatible count, audit, and reference calls reuse a short-lived reference set.
 
@@ -158,6 +174,17 @@ MCP tools report evidence; they do not decide whether a code change passes. `npm
 
 Pass `--yaml` after the input path for a YAML representation. The adapter accepts canonical JSON or YAML, validates the server and result-schema identity plus public tool and presentation literals, and never converts incomplete evidence into a pass.
 
+### Installation doctor
+
+`semantic-js-mcp doctor` returns a structured installation report with the same deterministic status vocabulary and exit codes as the CI adapter:
+
+- `pass`, exit `0`: every installation and semantic fixture check passed;
+- `fail`, exit `1`: the server ran, but a functional check returned the wrong result;
+- `untrusted`, exit `2`: runtime checks passed, but a provider did not confirm current diagnostic evidence;
+- `blocked`, exit `3`: a runtime requirement, provider component, or MCP startup step was unavailable.
+
+Use `semantic-js-mcp doctor --yaml` for a YAML representation. An `untrusted` result is not converted to a package failure by the distribution smoke test, but the reason remains explicit in the report.
+
 ### Cost visibility
 
 `lsp_count_text_matches` scans repository text without issuing per-match semantic requests. Use it to measure common identifiers before requesting verified counts or audits. Semantic collections preserve omitted limits as unlimited and report text-search time, semantic-verification time, semantic request count, and maximum concurrency. There is no hidden candidate cap.
@@ -187,12 +214,16 @@ A single reference collection may exceed the cache-location budget so it can sti
 ```bash
 npm run check
 npm run check:runtime
+npm run doctor
 npm run smoke
 npm run smoke:ci
 npm run smoke:vue
+npm run smoke:distribution
 ```
 
 `npm run benchmark` measures text counting, verified reference collection, memory, and freshness-validation latency at configurable match counts. Set `SEMANTIC_JS_MCP_BENCHMARK_COUNTS=10,100,1000,10000` to include the 10,000-match scale.
+
+`npm run smoke:distribution` packs the explicit npm file allowlist, installs the tarball into a temporary consumer project, runs the installed executable, and verifies that runtime components resolve from the consumer dependency tree rather than the source checkout.
 
 The smoke tests create temporary generic TypeScript and Vue projects. They do not depend on a specific application repository.
 
@@ -212,6 +243,7 @@ See [ROADMAP.md](ROADMAP.md) for planned areas of development. Roadmap items des
 ## Project Documents
 
 - [Architecture decisions](docs/architecture-decisions.md)
+- [Distribution verification](docs/distribution.md)
 - [Roadmap](ROADMAP.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

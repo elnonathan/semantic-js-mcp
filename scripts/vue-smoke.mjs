@@ -17,30 +17,34 @@ const component = path.join(src, "CounterPanel.vue");
 const childComponent = path.join(src, "ChildPanel.vue");
 await mkdir(src, {recursive: true});
 await writeFile(path.join(workspace, "package.json"), JSON.stringify({private: true, type: "module"}));
-await writeFile(path.join(workspace, "tsconfig.json"), JSON.stringify({
-  compilerOptions: {strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler"},
-  include: ["src/**/*.vue"],
-}));
-await writeFile(childComponent, [
-  "<script setup lang=\"ts\">",
-  "defineProps<{label: string}>();",
-  "</script>",
-  "<template><span>{{ label }}</span></template>",
-].join("\n"));
-await writeFile(component, [
-  "<script setup lang=\"ts\">",
-  'import ChildPanel from "./ChildPanel.vue";',
-  "const count = 0;",
-  "function increment(value: number): number {",
-  "  return value + 1;",
-  "}",
-  "const nextCount = increment(count);",
-  "</script>",
-  "<template>",
-  '  <ChildPanel label="Count" />',
-  "  <button>{{ nextCount }}</button>",
-  "</template>",
-].join("\n"));
+await writeFile(
+  path.join(workspace, "tsconfig.json"),
+  JSON.stringify({
+    compilerOptions: {strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler"},
+    include: ["src/**/*.vue"],
+  }),
+);
+await writeFile(
+  childComponent,
+  ['<script setup lang="ts">', "defineProps<{label: string}>();", "</script>", "<template><span>{{ label }}</span></template>"].join("\n"),
+);
+await writeFile(
+  component,
+  [
+    '<script setup lang="ts">',
+    'import ChildPanel from "./ChildPanel.vue";',
+    "const count = 0;",
+    "function increment(value: number): number {",
+    "  return value + 1;",
+    "}",
+    "const nextCount = increment(count);",
+    "</script>",
+    "<template>",
+    '  <ChildPanel label="Count" />',
+    "  <button>{{ nextCount }}</button>",
+    "</template>",
+  ].join("\n"),
+);
 
 const client = new Client({name: "semantic-js-mcp-vue-smoke", version: "1.0.0"});
 const transport = new StdioClientTransport({command: process.execPath, args: [path.join(pluginRoot, "server.mjs")], cwd: pluginRoot});
@@ -68,9 +72,7 @@ try {
   if (!supportedMethods.has(definition.structuredContent?.result?.resolutionMethod)) {
     throw new Error(`Vue template component used the wrong resolution method: ${definition.structuredContent?.result?.resolutionMethod}`);
   }
-  if (!definition.structuredContent?.result?.definitions?.some((item) =>
-    path.basename(item.file) === path.basename(childComponent),
-  )) {
+  if (!definition.structuredContent?.result?.definitions?.some((item) => path.basename(item.file) === path.basename(childComponent))) {
     throw new Error("Vue template component did not resolve to the imported SFC");
   }
   console.log(JSON.stringify({vueDocumentSymbols: "ok", vueTemplateComponentDefinition: "ok", yamlRepresentation: "ok"}, null, 2));

@@ -11,21 +11,21 @@ Supported source extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.
 
 ## Choose The Smallest Useful Tool
 
-| Starting information | Call | Provides | Continue with |
-| --- | --- | --- | --- |
-| One file | `lsp_document_symbols` | File structure | `lsp_definition`, `lsp_audit_symbol` |
-| Partial symbol name | `lsp_workspace_symbols` | Declaration discovery | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
-| Exact source position | `lsp_definition` | Resolved declaration | `lsp_hover`, `lsp_count_references` |
-| Exact source position | `lsp_hover` | Inferred type and documentation | `lsp_definition`, `lsp_audit_symbol` |
-| One changed file | `lsp_diagnostics` | Focused diagnostics | `lsp_definition`, `lsp_hover` |
-| Exact symbol text, unknown scope | `lsp_count_text_matches` | Text-match and file counts without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
-| Exact symbol name, broad scope | `lsp_count_named_symbol` | Small count response | `lsp_audit_named_symbol`, `lsp_references` |
-| Exact source position, broad scope | `lsp_count_references` | Small count response | `lsp_audit_symbol`, `lsp_references` |
-| Exact symbol name, composed evidence | `lsp_audit_named_symbol` | Definition, signature, counts, files | `lsp_references` |
-| Exact source position, composed evidence | `lsp_audit_symbol` | Definition, signature, counts, files | `lsp_references` |
-| Exact source position, locations needed | `lsp_references` | First verified-location page | `lsp_reference_page` |
-| Existing `referenceSetId` | `lsp_reference_page` | Later verified-location page | `lsp_reference_page`, `lsp_definition` |
-| Existing `referenceSetId` with unresolved candidates | `lsp_unresolved_reference_page` | Candidate locations and literal resolution reasons | `lsp_unresolved_reference_page`, `lsp_definition` |
+| Starting information                                 | Call                            | Provides                                                 | Continue with                                      |
+| ---------------------------------------------------- | ------------------------------- | -------------------------------------------------------- | -------------------------------------------------- |
+| One file                                             | `lsp_document_symbols`          | File structure                                           | `lsp_definition`, `lsp_audit_symbol`               |
+| Partial symbol name                                  | `lsp_workspace_symbols`         | Declaration discovery                                    | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
+| Exact source position                                | `lsp_definition`                | Resolved declaration                                     | `lsp_hover`, `lsp_count_references`                |
+| Exact source position                                | `lsp_hover`                     | Inferred type and documentation                          | `lsp_definition`, `lsp_audit_symbol`               |
+| One changed file                                     | `lsp_diagnostics`               | Focused diagnostics                                      | `lsp_definition`, `lsp_hover`                      |
+| Exact symbol text, unknown scope                     | `lsp_count_text_matches`        | Text-match and file counts without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
+| Exact symbol name, broad scope                       | `lsp_count_named_symbol`        | Small count response                                     | `lsp_audit_named_symbol`, `lsp_references`         |
+| Exact source position, broad scope                   | `lsp_count_references`          | Small count response                                     | `lsp_audit_symbol`, `lsp_references`               |
+| Exact symbol name, composed evidence                 | `lsp_audit_named_symbol`        | Definition, signature, counts, files                     | `lsp_references`                                   |
+| Exact source position, composed evidence             | `lsp_audit_symbol`              | Definition, signature, counts, files                     | `lsp_references`                                   |
+| Exact source position, locations needed              | `lsp_references`                | First verified-location page                             | `lsp_reference_page`                               |
+| Existing `referenceSetId`                            | `lsp_reference_page`            | Later verified-location page                             | `lsp_reference_page`, `lsp_definition`             |
+| Existing `referenceSetId` with unresolved candidates | `lsp_unresolved_reference_page` | Candidate locations and literal resolution reasons       | `lsp_unresolved_reference_page`, `lsp_definition`  |
 
 Composite audit tools are convenience calls over shared internal primitives. They preserve access to narrow tools; choose either route according to the evidence needed.
 

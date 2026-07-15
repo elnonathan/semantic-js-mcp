@@ -29,6 +29,12 @@ Result schema: `semantic-js-mcp` version `5`
 - `tsconfig.json`
 - `jsconfig.json`
 
+## Configuration Files
+
+- `package.json`
+- `tsconfig.json`
+- `jsconfig.json`
+
 ## Workspace Root Marker File Names
 
 - `package.json`
@@ -152,6 +158,7 @@ Result schema: `semantic-js-mcp` version `5`
 - `REFERENCE_SET_NOT_FOUND_OR_EXPIRED`
 - `REPOSITORY_CHANGED_DURING_COLLECTION`
 - `RUNTIME_DEPENDENCY_MISSING`
+- `RUNTIME_REQUIREMENT_UNMET`
 
 ## Evidence Type
 
@@ -214,12 +221,92 @@ Result schema: `semantic-js-mcp` version `5`
 - `tool-execution-failed`
 - `input-is-not-a-semantic-js-mcp-result`
 
+## CLI Commands
+
+- `serve`
+- `doctor`
+- `help`
+- `version`
+
+## CLI Arguments
+
+- `--help`
+- `-h`
+- `--version`
+- `-v`
+- `--yaml`
+
+## CLI Messages
+
+- `Unknown command`
+- `Unknown argument`
+- `Unknown option`
+
+## Doctor Checks
+
+- `node-runtime`
+- `runtime-components`
+- `ripgrep`
+- `mcp-startup`
+- `tool-discovery`
+- `typescript-symbols`
+- `typescript-references`
+- `diagnostic-freshness`
+- `vue-symbols`
+- `vue-template-definition`
+
+## Doctor Reasons
+
+- `check-completed`
+- `unsupported-node-runtime`
+- `runtime-component-missing`
+- `ripgrep-unavailable`
+- `mcp-startup-failed`
+- `tool-set-different-from-protocol`
+- `typescript-symbol-not-found`
+- `typescript-reference-accounting-incomplete`
+- `diagnostics-not-confirmed-for-current-document`
+- `vue-symbol-not-found`
+- `vue-template-definition-unresolved`
+- `check-failed`
+
+## Doctor Distribution Accepted Status
+
+- `pass`
+- `untrusted`
+
+## Doctor Status Priority
+
+- `pass`: `0`
+- `untrusted`: `1`
+- `fail`: `2`
+- `blocked`: `3`
+
 ## Required Runtime Components
 
-- `TYPESCRIPT_LANGUAGE_SERVER`: `node_modules/typescript-language-server/lib/cli.mjs`
-- `VUE_LANGUAGE_SERVER`: `node_modules/@vue/language-server/bin/vue-language-server.js`
-- `TYPESCRIPT_SERVER`: `node_modules/typescript/lib/tsserver.js`
-- `VUE_SFC_COMPILER`: `node_modules/@vue/compiler-sfc/dist/compiler-sfc.cjs.js`
+- `TYPESCRIPT_LANGUAGE_SERVER`: `typescript-language-server/lib/cli.mjs`
+- `VUE_LANGUAGE_SERVER`: `@vue/language-server/bin/vue-language-server.js`
+- `TYPESCRIPT_SERVER`: `typescript/lib/tsserver.js`
+- `VUE_SFC_COMPILER`: `@vue/compiler-sfc/dist/compiler-sfc.cjs.js`
+- `VUE_TYPESCRIPT_PLUGIN`: `@vue/typescript-plugin/package.json`
+
+## Runtime Commands
+
+- `rg`
+
+## Runtime Requirements
+
+- `MINIMUM_NODE_MAJOR`: `22`
+
+## Runtime Requirement Kinds
+
+- `node`
+- `runtime-component`
+
+## Package Paths
+
+- `server.mjs`
+- `cli.mjs`
 
 ## Runtime Status
 
@@ -229,6 +316,7 @@ Result schema: `semantic-js-mcp` version `5`
 ## Node Event
 
 - `error`
+- `close`
 
 ## Process Exit Codes
 
@@ -276,6 +364,7 @@ Result schema: `semantic-js-mcp` version `5`
 - `MCP_TOOL_TIMEOUT_SECONDS`: `300`
 - `INVENTORY_STAT_CONCURRENCY`: `32`
 - `COLLECTION_STABILITY_ATTEMPTS`: `2`
+- `PROCESS_ARGUMENT_OFFSET`: `2`
 
 ## Environment Variables
 

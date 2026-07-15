@@ -12,8 +12,10 @@ Semantic JS MCP is pre-release. Changes should preserve its read-only evidence c
 
 ```bash
 npm ci
+npm run format:check
 npm run check
 npm run check:runtime
+npm run doctor
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
@@ -24,6 +26,7 @@ Run `npm run benchmark` for changes that affect repository scanning, reference v
 ## Source Of Truth
 
 - `protocol.mjs` owns public literals, server identity, schema identity, runtime components, and defaults.
+- `.prettierrc.json` and the `format` scripts define the public source style.
 - `skills/semantic-navigation/references/protocol-literals.md` is generated; update it with `node scripts/generate-protocol-reference.mjs`.
 - `README.md` documents implemented behavior and known limitations.
 - `ROADMAP.md` summarizes public development direction without defining implemented behavior.
@@ -31,6 +34,7 @@ Run `npm run benchmark` for changes that affect repository scanning, reference v
 ## Change Expectations
 
 - Centralize public literals in `protocol.mjs`.
+- Run `npm run format` after changing public source or documentation.
 - Regenerate protocol documentation instead of editing it directly.
 - Add isolated fixtures for positive, partial, and failed evidence.
 - Preserve explicit unresolved candidates and freshness status.
@@ -47,9 +51,10 @@ npm run check:runtime
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:distribution
 ```
 
-Also run `npm run benchmark` when collection cost or memory could change. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
+Also run `npm run benchmark` when collection cost or memory could change. Run `npm run doctor` when changing runtime resolution, provider startup, the CLI, or diagnostic trust. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
 
 ## Changelog And Versioning
 

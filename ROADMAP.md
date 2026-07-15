@@ -28,9 +28,9 @@ Semantic JS MCP is under active development. This roadmap outlines areas of inve
 
 ## Distribution
 
-- Establish reproducible package and plugin release checks.
+- Expand reproducible package and plugin release checks across supported Node.js LTS releases and hosted CI.
 - Document setup for additional MCP hosts using the same public server contract.
-- Add compatibility verification for supported Node.js LTS releases.
+- Add immutable release-source, upgrade, rollback, and installed-plugin verification.
 
 ## Additional Language Domains
 

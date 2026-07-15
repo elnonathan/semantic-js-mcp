@@ -27,9 +27,11 @@ function isObject(value) {
 }
 
 function isCanonicalResult(result) {
-  const continuationsAreCanonical = Array.isArray(result?.continueWith) &&
+  const continuationsAreCanonical =
+    Array.isArray(result?.continueWith) &&
     result.continueWith.every((continuation) => isObject(continuation) && PUBLIC_TOOL_NAMES.has(continuation.tool));
-  return result?.server?.name === PRODUCT.NAME &&
+  return (
+    result?.server?.name === PRODUCT.NAME &&
     typeof result.server.version === "string" &&
     result.server.version.length > 0 &&
     result?.resultSchema?.name === RESULT_SCHEMA.NAME &&
@@ -41,7 +43,8 @@ function isCanonicalResult(result) {
     isObject(result.presentation) &&
     PRESENTATION_MODES.has(result.presentation.mode) &&
     continuationsAreCanonical &&
-    COLLECTION_STATUSES.has(result.collection.status);
+    COLLECTION_STATUSES.has(result.collection.status)
+  );
 }
 
 async function readInput(inputPath) {
@@ -77,10 +80,10 @@ function evaluate(data) {
   if (result.collection.status === COLLECTION_STATUS.FAILED || result.error) {
     return {...decision(CI_STATUS.BLOCKED, CI_REASON.TOOL_EXECUTION_FAILED), source};
   }
-  if (result.tool === TOOL.DIAGNOSTICS && (
-    result.result?.evidence?.status !== EVIDENCE_STATUS.VERIFIED ||
-    !result.result?.diagnosticsForCurrentDocument
-  )) {
+  if (
+    result.tool === TOOL.DIAGNOSTICS &&
+    (result.result?.evidence?.status !== EVIDENCE_STATUS.VERIFIED || !result.result?.diagnosticsForCurrentDocument)
+  ) {
     return {...decision(CI_STATUS.UNTRUSTED, CI_REASON.UNTRUSTED_DIAGNOSTICS), source};
   }
   if (result.collection.status === COLLECTION_STATUS.LIMITED || result.collection.status === COLLECTION_STATUS.PARTIAL) {

@@ -1,32 +1,32 @@
 #!/usr/bin/env node
 
-import {existsSync} from "node:fs";
-import path from "node:path";
-import {fileURLToPath} from "node:url";
-import {
-  ERROR_CODE,
-  PROCESS_EXIT_CODE,
-  REQUIRED_RUNTIME_COMPONENT,
-  RUNTIME_STATUS,
-  SERVER_VERSION,
-} from "../protocol.mjs";
+import {ERROR_CODE, PROCESS_EXIT_CODE, RUNTIME_COMMAND, RUNTIME_REQUIREMENT_KIND, RUNTIME_STATUS, SERVER_VERSION} from "../protocol.mjs";
+import {PACKAGE_ROOT, inspectExternalCommand, inspectNodeRuntime, inspectRuntimeComponents} from "../lib/runtime.mjs";
 
-const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const components = Object.entries(REQUIRED_RUNTIME_COMPONENT).map(([component, relativePath]) => ({
-  component,
-  file: path.join(pluginRoot, relativePath),
-  available: existsSync(path.join(pluginRoot, relativePath)),
-}));
+const node = inspectNodeRuntime();
+const components = inspectRuntimeComponents();
+const ripgrep = await inspectExternalCommand(RUNTIME_COMMAND.RIPGREP, ["--version"]);
 const missingComponents = components.filter((component) => !component.available);
+const blocked = !node.supported || missingComponents.length > 0 || !ripgrep.available;
+const unmetRequirements = [
+  ...(!node.supported ? [{requirement: RUNTIME_REQUIREMENT_KIND.NODE, details: node}] : []),
+  ...missingComponents.map((component) => ({requirement: RUNTIME_REQUIREMENT_KIND.RUNTIME_COMPONENT, details: component})),
+  ...(!ripgrep.available ? [{requirement: RUNTIME_COMMAND.RIPGREP, details: ripgrep}] : []),
+];
 const result = {
   serverVersion: SERVER_VERSION,
-  status: missingComponents.length === 0 ? RUNTIME_STATUS.READY : RUNTIME_STATUS.BLOCKED,
+  installationRoot: PACKAGE_ROOT,
+  status: blocked ? RUNTIME_STATUS.BLOCKED : RUNTIME_STATUS.READY,
+  node,
   components,
-  error: missingComponents.length === 0 ? undefined : {
-    code: ERROR_CODE.RUNTIME_DEPENDENCY_MISSING,
-    missingComponents,
-  },
+  externalCommands: [ripgrep],
+  error: blocked
+    ? {
+        code: ERROR_CODE.RUNTIME_REQUIREMENT_UNMET,
+        unmetRequirements,
+      }
+    : undefined,
 };
 
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-process.exitCode = missingComponents.length === 0 ? PROCESS_EXIT_CODE.SUCCESS : PROCESS_EXIT_CODE.FAILURE;
+process.exitCode = blocked ? PROCESS_EXIT_CODE.FAILURE : PROCESS_EXIT_CODE.SUCCESS;
