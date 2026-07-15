@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-15
+
+### Fixed
+
+- Bundle production dependencies in the npm artifact so Codex plugin installations run without a separate dependency installation step.
+- Validate the distribution from an empty npm cache in offline mode.
+
 ## [0.8.0] - 2026-07-15
 
 ### Added

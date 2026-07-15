@@ -21,13 +21,24 @@ export const NPM_AUTOMATIC_PACKAGE_FILE = Object.freeze([
 
 const WINDOWS_PLATFORM = "win32";
 const WINDOWS_COMMAND_SUFFIX = ".cmd";
+const DEPENDENCY_DIRECTORY_PREFIX = "node_modules/";
 
 export function npmExecutableName(name, platform = process.platform) {
   if (platform === WINDOWS_PLATFORM) return `${name}${WINDOWS_COMMAND_SUFFIX}`;
   return name;
 }
 
-export function packagePathIsAllowed(file, declaredFiles) {
+export function allProductionDependenciesAreBundled(manifest) {
+  const dependencies = Object.keys(manifest.dependencies || {}).sort();
+  const bundledDependencies = [...(manifest.bundleDependencies || [])].sort();
+  return (
+    dependencies.length === bundledDependencies.length &&
+    dependencies.every((dependency, index) => dependency === bundledDependencies[index])
+  );
+}
+
+export function packagePathIsAllowed(file, declaredFiles, bundledDependenciesAllowed = false) {
   if (NPM_AUTOMATIC_PACKAGE_FILE.includes(file)) return true;
+  if (bundledDependenciesAllowed && file.startsWith(DEPENDENCY_DIRECTORY_PREFIX)) return true;
   return declaredFiles.some((entry) => (entry.endsWith("/") ? file.startsWith(entry) : file === entry));
 }

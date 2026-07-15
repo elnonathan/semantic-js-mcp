@@ -14,7 +14,7 @@ For each file, it identifies the owning workspace and uses the corresponding Typ
 
 ## Project Status
 
-Version `0.8.0` is the first public release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
+Version `0.8.1` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
 
 ## Installation
 
@@ -27,7 +27,7 @@ codex plugin marketplace add elnonathan/semantic-js-mcp
 codex plugin add semantic-js-mcp@elnonathan
 ```
 
-Start a new Codex session after installation. The plugin bundles both the MCP server configuration and the semantic-navigation skill.
+Codex CLI 0.144.4 or newer is required for npm-backed marketplace installation. Start a new Codex session after installation. The plugin bundles both the MCP server configuration and the semantic-navigation skill.
 
 ### MCP executable
 
@@ -46,7 +46,7 @@ Configure the host to run `semantic-js-mcp serve`.
 - Node.js 24 LTS is recommended for new installations. See the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 - `rg` (ripgrep) must be available on `PATH` for repository-wide discovery.
 - The nearest workspace TypeScript SDK is used when available; the bundled TypeScript SDK is the fallback.
-- TypeScript, `typescript-language-server`, and the Vue language server are pinned dependencies. Install with `npm ci`; startup verifies their bundled entry points before accepting MCP requests.
+- TypeScript, `typescript-language-server`, and the Vue language server are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Source checkouts use `npm ci`; startup verifies provider entry points before accepting MCP requests.
 - Source discovery and language selection include `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, and `.vue` files.
 - Run `npm run check:runtime` to report every required component and its resolved file path.
 

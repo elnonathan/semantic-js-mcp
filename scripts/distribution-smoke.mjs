@@ -14,7 +14,12 @@ import {
   SERVER_VERSION,
   NODE_EVENT,
 } from "../protocol.mjs";
-import {REQUIRED_PACKAGE_FILE, npmExecutableName, packagePathIsAllowed} from "./distribution-policy.mjs";
+import {
+  REQUIRED_PACKAGE_FILE,
+  allProductionDependenciesAreBundled,
+  npmExecutableName,
+  packagePathIsAllowed,
+} from "./distribution-policy.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = await mkdtemp(path.join(tmpdir(), `${PRODUCT.NAME}-distribution-smoke-`));
@@ -58,16 +63,20 @@ try {
   const packResult = JSON.parse(packed.stdout)[0];
   const packedPaths = packResult.files.map((item) => item.path);
   const sourceManifest = JSON.parse(await readFile(path.join(sourceRoot, "package.json"), "utf8"));
+  assert(allProductionDependenciesAreBundled(sourceManifest), "Every production dependency must be bundled");
   for (const requiredFile of Object.values(REQUIRED_PACKAGE_FILE)) {
     assert(packedPaths.includes(requiredFile), `Tarball omitted required file: ${requiredFile}`);
   }
   for (const packedPath of packedPaths) {
-    assert(packagePathIsAllowed(packedPath, sourceManifest.files), `Tarball included a file outside the public allowlist: ${packedPath}`);
+    assert(
+      packagePathIsAllowed(packedPath, sourceManifest.files, true),
+      `Tarball included a file outside the public allowlist: ${packedPath}`,
+    );
   }
 
   const tarball = path.join(packageOutput, packResult.filename);
   await writeFile(path.join(consumer, "package.json"), JSON.stringify({private: true}));
-  const installed = await runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", tarball], consumer);
+  const installed = await runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--offline", tarball], consumer);
   assert(installed.exitCode === 0, `Tarball installation failed: ${installed.stderr}`);
 
   const installedRoot = await realpath(path.join(consumer, "node_modules", PRODUCT.NAME));
@@ -114,6 +123,8 @@ try {
         package: {name: installedManifest.name, version: installedManifest.version, filename: packResult.filename},
         packedFiles: packedPaths.length,
         unpackedBytes: packResult.unpackedSize,
+        bundledDependencies: sourceManifest.bundleDependencies.length,
+        offlineInstallation: true,
         installedRoot,
         executable: {version: version.stdout.trim(), help: "ok", invalidCommand: "rejected"},
         doctor: {status: doctorResult.status, exitCode: doctorResult.exitCode, checks: doctorResult.checks.length},

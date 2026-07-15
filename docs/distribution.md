@@ -9,7 +9,7 @@ codex plugin marketplace add elnonathan/semantic-js-mcp
 codex plugin add semantic-js-mcp@elnonathan
 ```
 
-The marketplace entry pins a concrete npm package version. A release updates the package version, plugin manifest, and marketplace entry together.
+The marketplace entry pins a concrete npm package version. Codex CLI 0.144.4 is the minimum verified client for npm-backed marketplace installation. A release updates the package version, plugin manifest, and marketplace entry together.
 
 ## Executable
 
@@ -36,7 +36,7 @@ The distribution smoke performs these checks:
 5. runs `semantic-js-mcp doctor` from that installed copy;
 6. verifies that language-server components resolve within the consumer dependency tree and never from the source checkout.
 
-The temporary installation uses an isolated npm cache and may resolve dependencies from the registry. Once installed, normal semantic analysis requires no network access.
+The temporary installation uses an empty, isolated npm cache with offline mode. Published packages bundle every production dependency, matching Codex installation behavior without resolving dependencies from the registry after download. Normal semantic analysis requires no network access once the package is available.
 
 ## Source Validation
 
