@@ -1,0 +1,34 @@
+{
+  "name": "semantic-js-mcp",
+  "version": "0.8.0",
+  "description": "Read-only semantic navigation for JavaScript ecosystem projects through MCP.",
+  "author": {
+    "name": "Jonathan Muñoz Lucas",
+    "email": "git@jonathanmunoz.dev",
+    "url": "https://mx.linkedin.com/in/nonathan"
+  },
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node --check protocol.mjs && node --check server.mjs && node --check scripts/generate-protocol-reference.mjs && node --check scripts/check-protocol-literals.mjs && node --check scripts/check-runtime.mjs && node --check scripts/semantic-js-mcp-ci.mjs && node --check scripts/ci-smoke.mjs && node --check scripts/smoke.mjs && node --check scripts/benchmark.mjs && node scripts/generate-protocol-reference.mjs --check && node scripts/check-protocol-literals.mjs",
+    "check:runtime": "node scripts/check-runtime.mjs",
+    "ci:evaluate": "node scripts/semantic-js-mcp-ci.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:ci": "node scripts/ci-smoke.mjs",
+    "smoke:vue": "node scripts/vue-smoke.mjs",
+    "benchmark": "node scripts/benchmark.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "@vue/compiler-sfc": "3.5.39",
+    "@vue/language-server": "3.0.8",
+    "typescript": "6.0.3",
+    "typescript-language-server": "5.1.3",
+    "yaml": "2.9.0",
+    "zod": "4.1.5"
+  }
+}

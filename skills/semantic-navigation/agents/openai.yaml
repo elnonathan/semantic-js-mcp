@@ -1,0 +1,4 @@
+interface:
+  display_name: "Semantic Navigation"
+  short_description: "Trace TypeScript and Vue symbols with semantic evidence"
+  default_prompt: "Use $semantic-navigation to trace this symbol with semantic-js-mcp and complementary source evidence."

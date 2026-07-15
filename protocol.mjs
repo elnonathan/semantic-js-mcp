@@ -1,0 +1,271 @@
+export const TOOL = Object.freeze({
+  DOCUMENT_SYMBOLS: "lsp_document_symbols",
+  WORKSPACE_SYMBOLS: "lsp_workspace_symbols",
+  DEFINITION: "lsp_definition",
+  HOVER: "lsp_hover",
+  DIAGNOSTICS: "lsp_diagnostics",
+  COUNT_TEXT_MATCHES: "lsp_count_text_matches",
+  COUNT_NAMED_SYMBOL: "lsp_count_named_symbol",
+  COUNT_REFERENCES: "lsp_count_references",
+  AUDIT_NAMED_SYMBOL: "lsp_audit_named_symbol",
+  AUDIT_SYMBOL: "lsp_audit_symbol",
+  REFERENCES: "lsp_references",
+  REFERENCE_PAGE: "lsp_reference_page",
+  UNRESOLVED_REFERENCE_PAGE: "lsp_unresolved_reference_page",
+});
+
+export const TOOL_ORDER = Object.freeze(Object.values(TOOL));
+export const PRODUCT = Object.freeze({
+  NAME: "semantic-js-mcp",
+  DISPLAY_NAME: "Semantic JS MCP",
+});
+
+export const ENVIRONMENT_VARIABLE = Object.freeze({
+  PROCESS_CWD: "SEMANTIC_JS_MCP_PROCESS_CWD",
+  CLIENT_IDLE_TIMEOUT_MS: "SEMANTIC_JS_MCP_CLIENT_IDLE_TIMEOUT_MS",
+  CLIENT_MINIMUM_EVICTION_AGE_MS: "SEMANTIC_JS_MCP_CLIENT_MINIMUM_EVICTION_AGE_MS",
+  MAXIMUM_ACTIVE_CLIENTS: "SEMANTIC_JS_MCP_MAXIMUM_ACTIVE_CLIENTS",
+  REFERENCE_SET_TTL_MS: "SEMANTIC_JS_MCP_REFERENCE_SET_TTL_MS",
+  MAXIMUM_REFERENCE_SETS: "SEMANTIC_JS_MCP_MAXIMUM_REFERENCE_SETS",
+  MAXIMUM_CHANGED_REFERENCE_SET_MARKERS: "SEMANTIC_JS_MCP_MAXIMUM_CHANGED_REFERENCE_SET_MARKERS",
+  MAXIMUM_CACHED_REFERENCE_LOCATIONS: "SEMANTIC_JS_MCP_MAXIMUM_CACHED_REFERENCE_LOCATIONS",
+  DEFAULT_REFERENCE_PAGE_SIZE: "SEMANTIC_JS_MCP_DEFAULT_REFERENCE_PAGE_SIZE",
+  CROSS_WORKSPACE_CONCURRENCY: "SEMANTIC_JS_MCP_CROSS_WORKSPACE_CONCURRENCY",
+  BENCHMARK_COUNTS: "SEMANTIC_JS_MCP_BENCHMARK_COUNTS",
+});
+
+export const WORKSPACE_CONFIGURATION_FILE_NAMES = Object.freeze(["package.json", "tsconfig.json", "jsconfig.json"]);
+export const WORKSPACE_ROOT_MARKER_FILE_NAMES = Object.freeze(["package.json", "tsconfig.json"]);
+export const SOURCE_EXTENSION = Object.freeze({
+  TYPESCRIPT: ".ts",
+  TYPESCRIPT_REACT: ".tsx",
+  TYPESCRIPT_MODULE: ".mts",
+  TYPESCRIPT_COMMONJS: ".cts",
+  JAVASCRIPT: ".js",
+  JAVASCRIPT_REACT: ".jsx",
+  JAVASCRIPT_MODULE: ".mjs",
+  JAVASCRIPT_COMMONJS: ".cjs",
+  VUE: ".vue",
+});
+export const SOURCE_FILE_GLOBS = Object.freeze(Object.values(SOURCE_EXTENSION).map((extension) => `*${extension}`));
+export const SOURCE_EXCLUDED_GLOBS = Object.freeze(["!**/node_modules/**", "!**/dist/**", "!**/coverage/**"]);
+
+export const LANGUAGE_ID = Object.freeze({
+  TYPESCRIPT: "typescript",
+  TYPESCRIPT_REACT: "typescriptreact",
+  JAVASCRIPT: "javascript",
+  JAVASCRIPT_REACT: "javascriptreact",
+  VUE: "vue",
+});
+
+export const VUE_SCRIPT_LANGUAGE = Object.freeze({
+  JAVASCRIPT: "js",
+  JAVASCRIPT_REACT: "jsx",
+});
+
+export const FORBIDDEN_PUBLIC_FIELD = Object.freeze([
+  "confidence",
+  "exhaustive",
+  "rejectedCandidateCount",
+  "rejectedCandidates",
+  "rejectedCandidatesByReason",
+  "semanticIdentity",
+  "truncated",
+]);
+
+export const COLLECTION_STATUS = Object.freeze({
+  COMPLETE: "complete",
+  LIMITED: "limited",
+  PARTIAL: "partial",
+  FAILED: "failed",
+});
+
+export const PRESENTATION_MODE = Object.freeze({
+  ALL_ITEMS: "all-items",
+  SUBSET: "subset",
+  COUNT_ONLY: "count-only",
+  SUMMARY_BY_FILE: "summary-by-file",
+  PAGE: "page",
+});
+
+export const LIMIT_MODE = Object.freeze({
+  UNLIMITED: "unlimited",
+  MAXIMUM: "maximum",
+});
+
+export const ACCOUNTING_STATUS = Object.freeze({
+  COMPLETE: "complete",
+  INCOMPLETE: "incomplete",
+});
+
+export const DEFINITION_MATCH = Object.freeze({
+  RESOLVED: "resolved",
+  UNRESOLVED: "unresolved",
+});
+
+export const SIGNATURE_SOURCE = Object.freeze({
+  QUERY_POSITION_HOVER: "query-position-hover",
+  RESOLVED_DEFINITION_HOVER: "resolved-definition-hover",
+  NOT_REPORTED: "not-reported",
+});
+
+export const DIAGNOSTIC_FRESHNESS = Object.freeze({
+  CURRENT: "current-document-version",
+  VERSION_NOT_REPORTED: "version-not-reported-by-language-server",
+  DIFFERENT_VERSION: "different-document-version",
+  NOT_REPORTED_FOR_CURRENT_DOCUMENT: "not-reported-for-current-document",
+});
+
+export const DIAGNOSTIC_SEVERITY = Object.freeze({
+  ERROR: "error",
+  WARNING: "warning",
+  INFORMATION: "information",
+  HINT: "hint",
+  NOT_REPORTED: "not-reported",
+});
+
+export const EVIDENCE_STATUS = Object.freeze({
+  VERIFIED: "verified",
+  UNTRUSTED: "untrusted",
+});
+
+export const DIAGNOSTIC_EVIDENCE_REASON = Object.freeze({
+  CURRENT_DOCUMENT_VERSION_CONFIRMED: "current-document-version-confirmed",
+  LANGUAGE_SERVER_VERSION_NOT_REPORTED: "language-server-version-not-reported",
+  LANGUAGE_SERVER_REPORTED_DIFFERENT_VERSION: "language-server-reported-different-version",
+  LANGUAGE_SERVER_DID_NOT_REPORT_CURRENT_DOCUMENT: "language-server-did-not-report-current-document",
+});
+
+export const CONTENT_FRESHNESS = Object.freeze({
+  VERIFIED_CURRENT: "verified-current-file-content",
+  VERIFIED_REPOSITORY_SOURCE_INVENTORY: "verified-current-repository-source-inventory",
+});
+
+export const REFERENCE_SET_CHANGE_TYPE = Object.freeze({
+  EVIDENCE_FILE_CONTENT_CHANGED: "evidence-file-content-changed",
+  REPOSITORY_SOURCE_INVENTORY_CHANGED: "repository-source-inventory-changed",
+});
+
+export const ERROR_CODE = Object.freeze({
+  TOOL_EXECUTION_FAILED: "TOOL_EXECUTION_FAILED",
+  REFERENCE_SET_CONTENT_CHANGED: "REFERENCE_SET_CONTENT_CHANGED",
+  REFERENCE_SET_NOT_FOUND_OR_EXPIRED: "REFERENCE_SET_NOT_FOUND_OR_EXPIRED",
+  REPOSITORY_CHANGED_DURING_COLLECTION: "REPOSITORY_CHANGED_DURING_COLLECTION",
+  RUNTIME_DEPENDENCY_MISSING: "RUNTIME_DEPENDENCY_MISSING",
+});
+
+export const EVIDENCE_TYPE = Object.freeze({
+  EXACT_IDENTIFIER_TEXT_MATCH: "exact-identifier-text-match",
+});
+
+export const FINGERPRINT_ALGORITHM = Object.freeze({
+  SHA_256: "sha256",
+});
+
+export const REFERENCE_DISCOVERY_METHOD = Object.freeze({
+  OWNING_WORKSPACE_LANGUAGE_SERVER: "owning-workspace-language-server",
+  DEFINITION_MATCH_FROM_ANOTHER_WORKSPACE: "definition-match-from-another-workspace",
+});
+
+export const DEFINITION_RESOLUTION_METHOD = Object.freeze({
+  LANGUAGE_SERVER: "language-server-definition",
+  TYPESCRIPT_SERVER: "typescript-server-definition",
+  VUE_TEMPLATE_IMPORT_BINDING: "vue-template-import-binding-definition",
+  UNRESOLVED: "unresolved",
+});
+
+export const UNRESOLVED_REFERENCE_REASON = Object.freeze({
+  DEFINITION_TOOLS_RETURNED_NO_LOCATION: "definition-tools-returned-no-location",
+  TYPESCRIPT_SERVER_REQUEST_FAILED: "typescript-server-request-failed-after-language-server-returned-no-location",
+  CANDIDATE_ANALYSIS_FAILED: "candidate-analysis-failed",
+  CANDIDATE_OPENED_IN_INFERRED_TYPESCRIPT_PROJECT: "candidate-opened-in-inferred-typescript-project",
+});
+
+export const TYPESCRIPT_PROJECT_KIND = Object.freeze({
+  CONFIGURED: "configured-typescript-project",
+  INFERRED: "inferred-typescript-project",
+  UNKNOWN: "typescript-project-kind-not-reported",
+});
+
+export const CI_STATUS = Object.freeze({
+  PASS: "pass",
+  FAIL: "fail",
+  UNTRUSTED: "untrusted",
+  BLOCKED: "blocked",
+});
+
+export const CI_EXIT_CODE = Object.freeze({
+  PASS: 0,
+  FAIL: 1,
+  UNTRUSTED: 2,
+  BLOCKED: 3,
+});
+
+export const CI_REASON = Object.freeze({
+  COMPLETE_EVIDENCE: "complete-evidence",
+  VERIFIED_DIAGNOSTIC_ERRORS: "verified-current-document-has-error-diagnostics",
+  INCOMPLETE_EVIDENCE: "collection-is-limited-or-partial",
+  UNTRUSTED_DIAGNOSTICS: "diagnostics-for-current-document-are-untrusted",
+  TOOL_EXECUTION_FAILED: "tool-execution-failed",
+  INVALID_INPUT: "input-is-not-a-semantic-js-mcp-result",
+});
+
+export const INTERNAL_RESOLUTION_SOURCE = Object.freeze({
+  NATIVE_LSP: "native-lsp",
+  TYPESCRIPT_SERVER_FALLBACK: "tsserver-fallback",
+  CROSS_WORKSPACE_DEFINITION: "cross-workspace-definition",
+  VUE_TEMPLATE_IMPORT_BINDING: "vue-template-import-binding",
+  UNRESOLVED: "unresolved",
+});
+
+export const RESULT_SCHEMA = Object.freeze({
+  NAME: PRODUCT.NAME,
+  VERSION: 5,
+});
+
+export const SERVER_VERSION = "0.8.0";
+
+export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
+  TYPESCRIPT_LANGUAGE_SERVER: "node_modules/typescript-language-server/lib/cli.mjs",
+  VUE_LANGUAGE_SERVER: "node_modules/@vue/language-server/bin/vue-language-server.js",
+  TYPESCRIPT_SERVER: "node_modules/typescript/lib/tsserver.js",
+  VUE_SFC_COMPILER: "node_modules/@vue/compiler-sfc/dist/compiler-sfc.cjs.js",
+});
+
+export const RUNTIME_STATUS = Object.freeze({
+  READY: "ready",
+  BLOCKED: "blocked",
+});
+
+export const PROCESS_EXIT_CODE = Object.freeze({
+  SUCCESS: 0,
+  FAILURE: 1,
+});
+
+export const NODE_EVENT = Object.freeze({
+  ERROR: "error",
+});
+
+export const DEFAULT = Object.freeze({
+  REQUEST_TIMEOUT_MS: 30_000,
+  DIAGNOSTIC_WAIT_MS: 2_000,
+  CLIENT_IDLE_TIMEOUT_MS: 60_000,
+  CLIENT_MINIMUM_EVICTION_AGE_MS: 15_000,
+  MAXIMUM_ACTIVE_CLIENTS: 4,
+  REFERENCE_SET_TTL_MS: 300_000,
+  MAXIMUM_REFERENCE_SETS: 12,
+  MAXIMUM_CHANGED_REFERENCE_SET_MARKERS: 24,
+  MAXIMUM_CACHED_REFERENCE_LOCATIONS: 50_000,
+  REFERENCE_PAGE_SIZE: 100,
+  CROSS_WORKSPACE_CONCURRENCY: 6,
+  FILE_FINGERPRINT_CONCURRENCY: 8,
+  NAMED_DEFINITION_CONCURRENCY: 2,
+  WORKSPACE_FILE_CONCURRENCY: 5,
+  FILE_SUGGESTION_COUNT: 8,
+  MILLISECONDS_PER_SECOND: 1_000,
+  BENCHMARK_COUNTS: Object.freeze([10, 100, 1_000]),
+  MCP_STARTUP_TIMEOUT_SECONDS: 30,
+  MCP_TOOL_TIMEOUT_SECONDS: 300,
+  INVENTORY_STAT_CONCURRENCY: 32,
+  COLLECTION_STABILITY_ATTEMPTS: 2,
+});

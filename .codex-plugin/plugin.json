@@ -1,0 +1,35 @@
+{
+  "name": "semantic-js-mcp",
+  "version": "0.8.0",
+  "description": "Read-only semantic navigation for JavaScript ecosystem projects through MCP.",
+  "author": {
+    "name": "Jonathan Muñoz Lucas"
+  },
+  "license": "MIT",
+  "keywords": [
+    "lsp",
+    "mcp",
+    "javascript",
+    "typescript",
+    "vue",
+    "semantic-analysis",
+    "code-navigation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Semantic JS MCP",
+    "shortDescription": "Semantic evidence for JavaScript projects",
+    "longDescription": "Adds read-only, workspace-aware TypeScript, JavaScript, Node module, JSX, TSX, and Vue evidence using language servers, complete reference accounting, reusable paged collections, actionable unresolved candidates, and versioned diagnostics.",
+    "developerName": "Jonathan Muñoz Lucas",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Trace this TypeScript symbol and its callers.",
+      "Review this change using semantic references.",
+      "Check focused diagnostics for the edited files."
+    ]
+  }
+}
