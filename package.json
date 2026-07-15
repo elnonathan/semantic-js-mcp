@@ -10,7 +10,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "semantic-js-mcp": "./cli.mjs"
+    "semantic-js-mcp": "cli.mjs"
   },
   "files": [
     ".codex-plugin/",
