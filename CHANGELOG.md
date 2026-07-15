@@ -4,18 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- `semantic-js-mcp` executable with `serve`, `doctor`, version, help, JSON, and YAML output paths.
-- Deterministic installation doctor for runtime requirements, provider resolution, MCP startup, tool discovery, TypeScript evidence, diagnostic freshness, and Vue navigation.
-- Explicit npm package allowlist and an isolated tarball installation smoke that prevents runtime reuse of the source checkout.
-- Reproducible Prettier formatting with a repository-wide public-source check in the validation gate.
-
-### Changed
-
-- Runtime provider entry points now resolve through Node's package resolution algorithm so npm dependency hoisting is supported.
-
-## [0.8.0] - 2026-07-14
+## [0.8.0] - 2026-07-15
 
 ### Added
 
@@ -30,3 +19,11 @@ All notable changes to this project will be documented in this file.
 - Runtime checks, generic TypeScript and Vue smoke fixtures, canonical-input CI policy evaluation, and reproducible benchmarks.
 - Literal `not-reported` diagnostic severity when a language server omits severity instead of silently assigning another severity.
 - Codex plugin metadata, semantic-navigation skill, architecture decisions, contribution guide, security policy, and public roadmap.
+- `semantic-js-mcp` executable with `serve`, `doctor`, version, help, JSON, and YAML output paths.
+- Deterministic installation doctor for runtime requirements, provider resolution, MCP startup, tool discovery, TypeScript evidence, diagnostic freshness, and Vue navigation.
+- Explicit npm package allowlist and an isolated tarball installation smoke that prevents runtime reuse of the source checkout.
+- Reproducible Prettier formatting with a repository-wide public-source check in the validation gate.
+
+### Changed
+
+- Runtime provider entry points resolve through Node's package resolution algorithm so npm dependency hoisting is supported.

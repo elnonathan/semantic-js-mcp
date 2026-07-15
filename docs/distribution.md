@@ -1,6 +1,15 @@
-# Distribution Verification
+# Distribution
 
-The package manifest defines an explicit public file allowlist and exposes the `semantic-js-mcp` executable. Publication remains a separate release action; the checks in this document operate on a locally produced package artifact.
+The package manifest defines an explicit public file allowlist and exposes the `semantic-js-mcp` executable. Codex installs the package through the public `elnonathan` marketplace; other MCP hosts can use the executable directly.
+
+## Codex
+
+```bash
+codex plugin marketplace add elnonathan/semantic-js-mcp
+codex plugin add semantic-js-mcp@elnonathan
+```
+
+The marketplace entry pins a concrete npm package version. A release updates the package version, plugin manifest, and marketplace entry together.
 
 ## Executable
 

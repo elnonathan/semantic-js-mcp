@@ -1,7 +1,7 @@
 {
   "name": "semantic-js-mcp",
   "version": "0.8.0",
-  "description": "Read-only semantic navigation for JavaScript ecosystem projects through MCP.",
+  "description": "Semantic understanding of JavaScript codebases for AI agents",
   "author": {
     "name": "Jonathan Muñoz Lucas"
   },
@@ -11,7 +11,7 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Semantic JS MCP",
-    "shortDescription": "Semantic evidence for JavaScript projects",
+    "shortDescription": "Semantic understanding of JavaScript codebases for AI agents",
     "longDescription": "Adds read-only, workspace-aware TypeScript, JavaScript, Node module, JSX, TSX, and Vue evidence using language servers, complete reference accounting, reusable paged collections, actionable unresolved candidates, and versioned diagnostics.",
     "developerName": "Jonathan Muñoz Lucas",
     "category": "Developer Tools",

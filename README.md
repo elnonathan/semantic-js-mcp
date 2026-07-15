@@ -14,7 +14,31 @@ For each file, it identifies the owning workspace and uses the corresponding Typ
 
 ## Project Status
 
-Version `0.8.0` is a pre-release. See the [roadmap](ROADMAP.md) for areas under consideration.
+Version `0.8.0` is the first public release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
+
+## Installation
+
+### Codex plugin
+
+Add the public marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add elnonathan/semantic-js-mcp
+codex plugin add semantic-js-mcp@elnonathan
+```
+
+Start a new Codex session after installation. The plugin bundles both the MCP server configuration and the semantic-navigation skill.
+
+### MCP executable
+
+Install the package globally when using an MCP host that accepts a command-based stdio configuration:
+
+```bash
+npm install --global semantic-js-mcp
+semantic-js-mcp doctor
+```
+
+Configure the host to run `semantic-js-mcp serve`.
 
 ## Runtime
 
