@@ -119,6 +119,24 @@ async function callUntilRecovered(client, fixture) {
   throw lastError || new Error("Provider did not recover");
 }
 
+async function auditUntilBridgeRecovered(client, fixture) {
+  let lastError;
+  for (let attempt = 0; attempt < TIMING.OBSERVATION_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await client.callTool({
+        name: TOOL.AUDIT_NAMED_SYMBOL,
+        arguments: {root: fixture.workspace, symbol: fixture.functionName},
+      });
+      if (!response.isError) return;
+      lastError = new Error(response.content?.[0]?.text || `${TOOL.AUDIT_NAMED_SYMBOL} failed after bridge exit`);
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(TIMING.OBSERVATION_INTERVAL_MS);
+  }
+  throw lastError || new Error("Vue tsserver bridge did not recover");
+}
+
 async function settlesWithin(promise, milliseconds) {
   let timer;
   const timeout = new Promise((resolve) => {
@@ -239,11 +257,7 @@ try {
   const bridgeBeforeExit = bridgePids[0];
   process.kill(bridgeBeforeExit, PROCESS_SIGNAL.TERMINATE);
   await waitUntil(() => !processExists(bridgeBeforeExit), "Vue tsserver bridge did not exit after the test signal");
-  const bridgeRecovery = await client.callTool({
-    name: TOOL.AUDIT_NAMED_SYMBOL,
-    arguments: {root: vueFixture.workspace, symbol: vueFixture.functionName},
-  });
-  assert(!bridgeRecovery.isError, bridgeRecovery.content?.[0]?.text || `${TOOL.AUDIT_NAMED_SYMBOL} failed after bridge exit`);
+  await auditUntilBridgeRecovered(client, vueFixture);
   await waitUntil(() => bridgePids.length >= 2, "Vue tsserver bridge exit did not create a replacement");
   assert(bridgePids[1] !== bridgeBeforeExit, "Vue tsserver bridge recovery reused the exited process");
 

@@ -507,6 +507,10 @@ class TsserverBridge {
       this.processError = error;
       process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${error.message}\n`);
     });
+    this.process.stdin.on(NODE_EVENT.ERROR, (error) => {
+      this.processError = error;
+      this.handleBridgeProcessFailure(error);
+    });
     this.process.on(PROCESS_EVENT.EXIT, (code, signal) => {
       this.handleBridgeProcessFailure(
         this.processError || new Error(`Vue tsserver bridge exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`),
@@ -521,8 +525,10 @@ class TsserverBridge {
 
   handleBridgeProcessFailure(error) {
     if (!this.process) return;
+    const failedProcess = this.process;
     this.process = undefined;
     this.rejectPending(error);
+    if (failedProcess.exitCode === null && !failedProcess.killed) failedProcess.kill(PROCESS_SIGNAL.TERMINATE);
     if (!this.closed) this.onExit?.(this);
   }
 
@@ -634,6 +640,10 @@ class LspClient {
       this.processError = error;
       process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] ${error.message}\n`);
     });
+    this.process.stdin.on(NODE_EVENT.ERROR, (error) => {
+      this.processError = error;
+      this.handleLanguageServerProcessFailure(error);
+    });
     this.process.on(PROCESS_EVENT.EXIT, (code, signal) => {
       process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})\n`);
       this.handleLanguageServerProcessFailure(
@@ -680,11 +690,13 @@ class LspClient {
 
   handleLanguageServerProcessFailure(error) {
     if (!this.process) return;
+    const failedProcess = this.process;
     this.process = undefined;
     this.rejectPending(error);
     this.invalidateAllDiagnostics(error);
     this.tsserverBridge?.close(error);
     this.tsserverBridge = undefined;
+    if (failedProcess.exitCode === null && !failedProcess.killed) failedProcess.kill(PROCESS_SIGNAL.TERMINATE);
     if (!this.closed) this.onExit?.(this);
   }
 
@@ -1087,6 +1099,27 @@ function normalizeLocations(value) {
   return items.map(normalizeLocation).filter(Boolean);
 }
 
+function locationsAreEqual(left, right) {
+  return (
+    path.resolve(left.file) === path.resolve(right.file) &&
+    left.range.start.line === right.range.start.line &&
+    left.range.start.column === right.range.start.column
+  );
+}
+
+async function followLocalDefinitionBinding(context, definitions) {
+  if (definitions.length !== 1) return definitions;
+  const [localDefinition] = definitions;
+  if (path.resolve(localDefinition.file) !== context.file) return definitions;
+  const raw = await context.client.textRequest("textDocument/definition", context.file, {
+    position: lspPosition(localDefinition.range.start.line, localDefinition.range.start.column),
+  });
+  const followedDefinitions = normalizeLocations(raw);
+  if (followedDefinitions.length === 0) return definitions;
+  if (followedDefinitions.length === 1 && locationsAreEqual(followedDefinitions[0], localDefinition)) return definitions;
+  return followedDefinitions;
+}
+
 function normalizeTsserverDefinitions(value) {
   return (value?.definitions || []).map((definition) => ({
     file: path.resolve(definition.file),
@@ -1102,8 +1135,10 @@ async function definitionsAtWithoutVueTemplateFallback(file, root, line, column)
   const raw = await context.client.textRequest("textDocument/definition", context.file, {position: lspPosition(line, column)});
   const lspDefinitions = normalizeLocations(raw);
   if (lspDefinitions.length > 0) {
-    return {context, definitions: lspDefinitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
+    const definitions = await followLocalDefinitionBinding(context, lspDefinitions);
+    return {context, definitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
   }
+  const project = await typescriptProjectEvidence(context);
   try {
     const tsserverResult = await context.client.rawTsserver().request("definitionAndBoundSpan", {
       file: context.file,
@@ -1111,7 +1146,6 @@ async function definitionsAtWithoutVueTemplateFallback(file, root, line, column)
       offset: column,
     });
     const definitions = normalizeTsserverDefinitions(tsserverResult);
-    const project = await typescriptProjectEvidence(context);
     return {
       context,
       definitions,
@@ -1120,7 +1154,6 @@ async function definitionsAtWithoutVueTemplateFallback(file, root, line, column)
       project,
     };
   } catch (error) {
-    const project = await typescriptProjectEvidence(context);
     return {
       context,
       definitions: [],

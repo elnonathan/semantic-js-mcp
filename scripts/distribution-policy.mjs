@@ -47,14 +47,7 @@ export const NPM_DISTRIBUTION = Object.freeze({
   CACHE_ENVIRONMENT_VARIABLE: "npm_config_cache",
 });
 
-const WINDOWS_PLATFORM = "win32";
-const WINDOWS_COMMAND_SUFFIX = ".cmd";
 const DEPENDENCY_DIRECTORY_PREFIX = "node_modules/";
-
-export function npmExecutableName(name, platform = process.platform) {
-  if (platform === WINDOWS_PLATFORM) return `${name}${WINDOWS_COMMAND_SUFFIX}`;
-  return name;
-}
 
 export function allProductionDependenciesAreBundled(manifest) {
   const dependencies = Object.keys(manifest.dependencies || {}).sort();

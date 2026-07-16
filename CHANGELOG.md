@@ -10,6 +10,11 @@ All notable changes to this project will be documented in this file.
 - Focused negative-verification and public-documentation gates.
 - Concise starter prompts and evidence examples for common agent workflows.
 
+### Fixed
+
+- Resolve cross-project import aliases consistently when a language server first returns the local import binding.
+- Make release verification portable across Windows paths, executable shims, temporary-file locking, and checkout line endings.
+
 ## [0.10.0] - 2026-07-16
 
 ### Added

@@ -310,6 +310,18 @@ try {
     "Cross-project path alias did not resolve to its definition",
   );
 
+  const sameFileDefinition = assertResult(
+    await client.callTool({
+      name: TOOL.DEFINITION,
+      arguments: {file: unrelatedFile, root: workspace, line: 2, column: 31},
+    }),
+    TOOL.DEFINITION,
+  );
+  assert(
+    sameFileDefinition.result.definitions.some((item) => path.basename(item.file) === "unrelated.ts"),
+    "A same-file definition was replaced while following a local binding",
+  );
+
   const decoratedDefinition = assertResult(
     await client.callTool({
       name: TOOL.DEFINITION,

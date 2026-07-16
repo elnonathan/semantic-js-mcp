@@ -22,6 +22,10 @@ function markdownHeadings(source) {
   );
 }
 
+function repositoryPath(root, absolute) {
+  return path.relative(root, absolute).split(path.sep).join("/");
+}
+
 export function evaluateDocumentation(documents) {
   const findings = [];
   for (const file of Object.values(DOCUMENTATION_FILE)) {
@@ -78,7 +82,7 @@ async function markdownFiles(directory, root) {
       files.push(...(await markdownFiles(absolute, root)));
       continue;
     }
-    if (entry.isFile() && entry.name.endsWith(".md")) files.push(path.relative(root, absolute));
+    if (entry.isFile() && entry.name.endsWith(".md")) files.push(repositoryPath(root, absolute));
   }
   return files;
 }

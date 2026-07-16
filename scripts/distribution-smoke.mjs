@@ -18,7 +18,6 @@ import {
   REQUIRED_PACKAGE_FILE,
   NPM_DISTRIBUTION,
   allProductionDependenciesAreBundled,
-  npmExecutableName,
   packagePathIsAllowed,
 } from "./distribution-policy.mjs";
 
@@ -46,9 +45,13 @@ function run(command, args, options = {}) {
   });
 }
 
-function runNpm(args, cwd) {
-  if (npmCli) return run(process.execPath, [npmCli, ...args], {cwd, env: npmEnvironment});
-  return run("npm", args, {cwd, env: npmEnvironment});
+function runNpm(args, cwd, environment = npmEnvironment) {
+  if (npmCli) return run(process.execPath, [npmCli, ...args], {cwd, env: environment});
+  return run("npm", args, {cwd, env: environment});
+}
+
+function runInstalledExecutable(args, cwd, environment) {
+  return runNpm(["exec", "--offline", "--", PRODUCT.NAME, ...args], cwd, environment);
 }
 
 function assert(condition, message) {
@@ -81,21 +84,20 @@ try {
   assert(installed.exitCode === 0, `Tarball installation failed: ${installed.stderr}`);
 
   const installedRoot = await realpath(path.join(consumer, "node_modules", PRODUCT.NAME));
-  const binaryName = npmExecutableName(PRODUCT.NAME);
-  const binary = path.join(consumer, "node_modules", ".bin", binaryName);
   const isolatedPath = (process.env.PATH || "")
     .split(path.delimiter)
     .filter((entry) => entry && !path.resolve(entry).startsWith(sourceRoot))
     .join(path.delimiter);
-  const doctor = await run(binary, ["doctor"], {cwd: consumer, env: {...process.env, PATH: isolatedPath}});
-  const version = await run(binary, [CLI_ARGUMENT.VERSION], {cwd: consumer, env: {...process.env, PATH: isolatedPath}});
+  const installedEnvironment = {...npmEnvironment, PATH: isolatedPath};
+  const doctor = await runInstalledExecutable(["doctor"], consumer, installedEnvironment);
+  const version = await runInstalledExecutable([CLI_ARGUMENT.VERSION], consumer, installedEnvironment);
   assert(
     version.exitCode === PROCESS_EXIT_CODE.SUCCESS && version.stdout.trim() === SERVER_VERSION,
     "Installed executable returned the wrong version",
   );
-  const help = await run(binary, [CLI_ARGUMENT.HELP], {cwd: consumer, env: {...process.env, PATH: isolatedPath}});
+  const help = await runInstalledExecutable([CLI_ARGUMENT.HELP], consumer, installedEnvironment);
   assert(help.exitCode === PROCESS_EXIT_CODE.SUCCESS && help.stdout.includes(PRODUCT.NAME), "Installed executable did not return help");
-  const invalid = await run(binary, ["unknown-command"], {cwd: consumer, env: {...process.env, PATH: isolatedPath}});
+  const invalid = await runInstalledExecutable(["unknown-command"], consumer, installedEnvironment);
   assert(
     invalid.exitCode === PROCESS_EXIT_CODE.FAILURE && invalid.stderr.includes(CLI_MESSAGE.UNKNOWN_COMMAND),
     "Installed executable accepted an unknown command",

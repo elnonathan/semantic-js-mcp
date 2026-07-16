@@ -16,14 +16,13 @@ import {
   PRODUCT,
 } from "../protocol.mjs";
 import {verifyCodexPlugin} from "./codex-plugin-verification.mjs";
-import {NPM_DISTRIBUTION, npmExecutableName} from "./distribution-policy.mjs";
+import {NPM_DISTRIBUTION} from "./distribution-policy.mjs";
 import {RELEASE_ARGUMENT, RELEASE_CHECK, RELEASE_MODE, RELEASE_REASON, releaseStatus} from "./release-contract.mjs";
 
 const POSTPUBLICATION_PATH = Object.freeze({
   NPM_CACHE: "npm-cache",
   CONSUMER: "consumer",
   DEPENDENCY_DIRECTORY: "node_modules",
-  BINARY_DIRECTORY: ".bin",
 });
 
 const NPM_COMMAND = Object.freeze({
@@ -62,6 +61,10 @@ function run(command, args, options = {}) {
 function runNpm(args, cwd, environment) {
   if (npmCli) return run(process.execPath, [npmCli, ...args], {cwd, env: environment});
   return run("npm", args, {cwd, env: environment});
+}
+
+function runInstalledExecutable(args, cwd, environment) {
+  return runNpm(["exec", "--offline", "--", PRODUCT.NAME, ...args], cwd, environment);
 }
 
 function check(name, status, reason, details) {
@@ -135,17 +138,10 @@ async function verifyInstallation(context) {
 async function verifyInstalledVersion(context) {
   const installedRoot = await realpath(path.join(context.consumer, POSTPUBLICATION_PATH.DEPENDENCY_DIRECTORY, PRODUCT.NAME));
   const installedManifest = JSON.parse(await readFile(path.join(installedRoot, CONFIGURATION_FILE.PACKAGE), "utf8"));
-  const binary = path.join(
-    context.consumer,
-    POSTPUBLICATION_PATH.DEPENDENCY_DIRECTORY,
-    POSTPUBLICATION_PATH.BINARY_DIRECTORY,
-    npmExecutableName(PRODUCT.NAME),
-  );
-  const version = await run(binary, [CLI_ARGUMENT.VERSION], {cwd: context.consumer, env: context.environment});
+  const version = await runInstalledExecutable([CLI_ARGUMENT.VERSION], context.consumer, context.environment);
   const passed =
     version.exitCode === CI_EXIT_CODE.PASS && version.stdout.trim() === requestedVersion && installedManifest.version === requestedVersion;
   return {
-    binary,
     result: check(
       RELEASE_CHECK.INSTALLED_VERSION,
       passed ? CI_STATUS.PASS : CI_STATUS.FAIL,
@@ -155,8 +151,8 @@ async function verifyInstalledVersion(context) {
   };
 }
 
-async function verifyInstalledDoctor(context, binary) {
-  const doctor = await run(binary, [CLI_COMMAND.DOCTOR], {cwd: context.consumer, env: context.environment});
+async function verifyInstalledDoctor(context) {
+  const doctor = await runInstalledExecutable([CLI_COMMAND.DOCTOR], context.consumer, context.environment);
   let doctorResult;
   try {
     doctorResult = JSON.parse(doctor.stdout);
@@ -217,7 +213,7 @@ async function runVerification() {
   checks.push(installedVersion.result);
   if (installedVersion.result.status !== CI_STATUS.PASS) return;
 
-  checks.push(await verifyInstalledDoctor(context, installedVersion.binary));
+  checks.push(await verifyInstalledDoctor(context));
   checks.push(...(await verifyCodexPlugin({version: requestedVersion, workspace, spawn})));
 }
 

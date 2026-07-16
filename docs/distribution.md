@@ -70,4 +70,4 @@ Postpublication verification requires an explicit version and the matching `v<ve
 
 ## Continuous Integration
 
-GitHub Actions runs the complete release gate on Node.js 22 and 24 across Linux, macOS, and Windows. These are the supported LTS lines at the time this matrix was defined. The gate verifies ripgrep before running static checks, runtime resolution, documentation, CI policy, negative fixtures, doctor, TypeScript and Vue semantics, provider lifecycle, package installation, and the short benchmark.
+GitHub Actions runs the complete release gate on Node.js 22 and 24 across Ubuntu, macOS, and Windows. A second Linux matrix runs the same gate on Node.js 22 across Ubuntu, Fedora, Arch Linux, and openSUSE. The gate verifies ripgrep before running static checks, runtime resolution, documentation, CI policy, negative fixtures, doctor, TypeScript and Vue semantics, provider lifecycle, package installation, and the short benchmark.
