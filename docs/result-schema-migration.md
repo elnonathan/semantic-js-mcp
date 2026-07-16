@@ -24,6 +24,12 @@ Use `lsp_reference_page` with a count or audit `referenceSetId` to retrieve
 verified locations. Use `lsp_references` when starting from an exact source
 position without an existing reference set.
 
+Named counts and audits also report `definitionSelectionStatus`. Continuation
+lists include `lsp_reference_page` only when at least one selected definition
+produced a reusable reference set. Empty or multiple selection recommends
+structural or position-based navigation instead of implying that a filename or
+common symbol name established identity.
+
 The collection contract is unchanged: omitted collection limits remain
 unlimited, pagination affects presentation only, and unresolved candidates keep
 the collection partial. Schema 6 does not convert incomplete evidence into a

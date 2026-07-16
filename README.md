@@ -150,9 +150,13 @@ For reference results, `includeDeclaration: false` excludes locations that resol
 
 Reference pages group the locations returned in that page under `referenceGroups` by their exact source `file`. Each location keeps its explicit `range` and `discoveryMethod`, while `locationsAvailable` and `locationsReturned` continue to count locations rather than file groups. Pagination selects locations before grouping, so grouping does not change page membership or collection status. File groups follow first appearance in the page, and locations preserve their relative order within each file; cross-file interleaving is not part of the reference contract.
 
+Named counts and audits report `definitionSelectionStatus` as `no-definition-selected`, `one-definition-selected`, or `multiple-definitions-selected`. This status describes exact declarations remaining after `fileHint` filtering, before any `maxDefinitions` analysis limit. When selection is empty or ambiguous, `continueWith` recommends structural or position-based tools. It recommends `lsp_reference_page` only when the response contains a reusable reference set.
+
 ### Vue template definitions
 
 Definition lookup uses the Vue language server and TypeScript server first. If both leave a Vue template tag unresolved, the server parses the SFC and follows only a matching local import from `<script>` or `<script setup>`. A successful fallback reports `resolutionMethod: vue-template-import-binding-definition`. This proves an imported component binding; it does not infer global component registration or filename-based identity.
+
+For named Vue queries, `fileHint` filters declarations already reported by the language server. A filename such as `MarkdownText.vue` is not itself treated as a declaration named `MarkdownText`. Use `lsp_audit_symbol` at an exact import or template position when a component name has no exact declaration in the hinted SFC or matches multiple declarations.
 
 The Vue parser and TypeScript AST dependencies are loaded lazily only when this fallback is needed.
 

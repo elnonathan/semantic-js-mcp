@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Group verified page locations by source file while preserving explicit ranges, discovery methods, location-based pagination, and evidence accounting.
 - Advance the canonical result schema to version 6 for the compact audit presentation contract.
 - Document migration from schema 5 and reject legacy envelopes in canonical-result validation.
+- Report whether named-symbol filtering selected zero, one, or multiple exact definitions, and recommend only continuation tools supported by the returned evidence.
 
 ## [0.8.1] - 2026-07-15
 

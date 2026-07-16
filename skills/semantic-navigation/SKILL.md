@@ -105,6 +105,8 @@ Diagnostics identify the analyzed document with a version and SHA-256 fingerprin
 
 For Vue template tags, `lsp_definition` and position audits try the language servers first. If they report no definition, the MCP may follow a matching component import declared in the same SFC. `resolutionMethod: vue-template-import-binding-definition` means that exact local import was resolved. It does not prove global registration, runtime rendering, or component behavior; inspect the SFC and relevant tests for those claims.
 
+Named counts and audits report `definitionSelectionStatus`. Read `no-definition-selected`, `one-definition-selected`, and `multiple-definitions-selected` literally after applying any `fileHint`. A Vue filename is not declaration evidence. When selection is empty or multiple, follow the returned `lsp_document_symbols`, `lsp_workspace_symbols`, or `lsp_audit_symbol` continuation to locate and audit an exact source position. Use `lsp_reference_page` only when the result supplies a `referenceSetId`.
+
 Position-audit signatures report `signatureSource`. `resolved-definition-hover` means the query position had no hover information and the MCP obtained the signature from a resolved declaration. `not-reported` means neither location produced signature evidence.
 
 The MCP reports evidence status, not code approval. CI consumers may use `scripts/semantic-js-mcp-ci.mjs` to map complete evidence and verified diagnostics to the literal `pass`, `fail`, `untrusted`, or `blocked` policy states.

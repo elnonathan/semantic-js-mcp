@@ -128,6 +128,12 @@ Result schema version: `6`
 - `resolved`
 - `unresolved`
 
+## Definition Selection Status
+
+- `no-definition-selected`
+- `one-definition-selected`
+- `multiple-definitions-selected`
+
 ## Signature Source
 
 - `query-position-hover`

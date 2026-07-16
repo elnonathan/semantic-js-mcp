@@ -65,3 +65,9 @@ The complete requested reference set remains available through `lsp_reference_pa
 This keeps model context proportional to the question without making a compact response look more complete than its underlying collection. Presentation size never changes `collection.status`.
 
 Detailed verified locations may be grouped by their exact source file because the file is a shared property of every location in that group. Pagination and counts remain location-based, and each location keeps its explicit range and discovery method. Reference locations have no cross-file ordering contract. Status, freshness, unresolved candidates, and unlike evidence are not grouped merely to shorten output.
+
+## Named Selection Reports Ambiguity Without Inferring Identity
+
+Named-symbol tools report whether exact declaration filtering selected zero, one, or multiple definitions. A `fileHint` narrows declarations already reported by the owning provider; it does not turn a matching filename, Vue component name, import alias, or test double into declaration evidence.
+
+When selection is empty or ambiguous, continuation guidance points consumers toward structural or position-based tools. Reference-page guidance appears only when the response contains a reusable reference set. This keeps ambiguity actionable without guessing which homonymous symbol the consumer intended.

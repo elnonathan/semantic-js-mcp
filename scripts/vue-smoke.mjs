@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
-import {DEFINITION_RESOLUTION_METHOD, TOOL} from "../protocol.mjs";
+import {DEFINITION_RESOLUTION_METHOD, DEFINITION_SELECTION_STATUS, TOOL} from "../protocol.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-vue-smoke-"));
@@ -26,7 +26,13 @@ await writeFile(
 );
 await writeFile(
   childComponent,
-  ['<script setup lang="ts">', "defineProps<{label: string}>();", "</script>", "<template><span>{{ label }}</span></template>"].join("\n"),
+  [
+    '<script setup lang="ts">',
+    "defineProps<{label: string}>();",
+    "function sharedAction(): string { return 'child'; }",
+    "</script>",
+    "<template><span>{{ label }}</span></template>",
+  ].join("\n"),
 );
 await writeFile(
   component,
@@ -37,6 +43,7 @@ await writeFile(
     "function increment(value: number): number {",
     "  return value + 1;",
     "}",
+    "function sharedAction(): string { return 'parent'; }",
     "const nextCount = increment(count);",
     "</script>",
     "<template>",
@@ -61,7 +68,7 @@ try {
   }
   const definition = await client.callTool({
     name: TOOL.DEFINITION,
-    arguments: {file: component, root: workspace, line: 10, column: 4},
+    arguments: {file: component, root: workspace, line: 11, column: 4},
   });
   if (definition.isError) throw new Error(definition.content?.[0]?.text || "Vue template component definition failed");
   const supportedMethods = new Set([
@@ -75,7 +82,73 @@ try {
   if (!definition.structuredContent?.result?.definitions?.some((item) => path.basename(item.file) === path.basename(childComponent))) {
     throw new Error("Vue template component did not resolve to the imported SFC");
   }
-  console.log(JSON.stringify({vueDocumentSymbols: "ok", vueTemplateComponentDefinition: "ok", yamlRepresentation: "ok"}, null, 2));
+
+  const ambiguousCount = await client.callTool({
+    name: TOOL.COUNT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "sharedAction"},
+  });
+  if (ambiguousCount.isError) throw new Error(ambiguousCount.content?.[0]?.text || "Vue ambiguous named count failed");
+  if (ambiguousCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.MULTIPLE) {
+    throw new Error("Vue named count did not report multiple selected definitions");
+  }
+  if (!ambiguousCount.structuredContent?.continueWith?.includes(TOOL.AUDIT_SYMBOL)) {
+    throw new Error("Ambiguous Vue named count did not recommend position-based audit");
+  }
+
+  const filteredCount = await client.callTool({
+    name: TOOL.COUNT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "sharedAction", fileHint: "ChildPanel.vue"},
+  });
+  if (filteredCount.isError) throw new Error(filteredCount.content?.[0]?.text || "Vue filtered named count failed");
+  if (filteredCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.ONE) {
+    throw new Error("Vue file hint did not select one exact definition");
+  }
+  if (!filteredCount.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
+    throw new Error("Filtered Vue named count omitted its reusable reference set");
+  }
+
+  const filenameOnlyCount = await client.callTool({
+    name: TOOL.COUNT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "ChildPanel", fileHint: "ChildPanel.vue"},
+  });
+  if (filenameOnlyCount.isError) throw new Error(filenameOnlyCount.content?.[0]?.text || "Vue component-name count failed");
+  if (filenameOnlyCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.NONE) {
+    throw new Error("Vue filename was incorrectly treated as an exact named declaration");
+  }
+  if (filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
+    throw new Error("Vue named count recommended a reference page without a reusable reference set");
+  }
+  if (!filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.DOCUMENT_SYMBOLS)) {
+    throw new Error("Vue named count did not recommend structural navigation after an empty file filter");
+  }
+
+  const filenameOnlyAudit = await client.callTool({
+    name: TOOL.AUDIT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "ChildPanel", fileHint: "ChildPanel.vue"},
+  });
+  if (filenameOnlyAudit.isError) throw new Error(filenameOnlyAudit.content?.[0]?.text || "Vue component-name audit failed");
+  if (filenameOnlyAudit.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.NONE) {
+    throw new Error("Vue named audit did not preserve the empty definition selection");
+  }
+  if (filenameOnlyAudit.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
+    throw new Error("Vue named audit recommended a reference page without a reusable reference set");
+  }
+  if (!filenameOnlyAudit.structuredContent?.continueWith?.includes(TOOL.AUDIT_SYMBOL)) {
+    throw new Error("Vue named audit did not recommend position-based audit after an empty file filter");
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        vueDocumentSymbols: "ok",
+        vueTemplateComponentDefinition: "ok",
+        vueNamedDefinitionSelection: "ok",
+        yamlRepresentation: "ok",
+      },
+      null,
+      2,
+    ),
+  );
 } finally {
   await client.close().catch(() => undefined);
   await rm(workspace, {recursive: true, force: true});

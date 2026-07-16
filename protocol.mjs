@@ -188,6 +188,12 @@ export const DEFINITION_MATCH = Object.freeze({
   UNRESOLVED: "unresolved",
 });
 
+export const DEFINITION_SELECTION_STATUS = Object.freeze({
+  NONE: "no-definition-selected",
+  ONE: "one-definition-selected",
+  MULTIPLE: "multiple-definitions-selected",
+});
+
 export const SIGNATURE_SOURCE = Object.freeze({
   QUERY_POSITION_HOVER: "query-position-hover",
   RESOLVED_DEFINITION_HOVER: "resolved-definition-hover",

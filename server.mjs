@@ -18,6 +18,7 @@ import {
   DEFAULT,
   DEFINITION_MATCH,
   DEFINITION_RESOLUTION_METHOD,
+  DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
   DIAGNOSTIC_FRESHNESS,
   DIAGNOSTIC_SEVERITY,
@@ -1849,6 +1850,28 @@ function countSummary(audit, symbol) {
   };
 }
 
+function definitionSelectionStatus(definitions) {
+  if (definitions.length === 0) return DEFINITION_SELECTION_STATUS.NONE;
+  if (definitions.length === 1) return DEFINITION_SELECTION_STATUS.ONE;
+  return DEFINITION_SELECTION_STATUS.MULTIPLE;
+}
+
+function namedSymbolContinuations(operation, includeNamedAudit, hasFileHint) {
+  const continuations = [];
+  const selectionStatus = definitionSelectionStatus(operation.matchingDefinitions);
+  const hasSelectedDefinitions = selectionStatus !== DEFINITION_SELECTION_STATUS.NONE;
+  const hasOneSelectedDefinition = selectionStatus === DEFINITION_SELECTION_STATUS.ONE;
+
+  if (includeNamedAudit && hasSelectedDefinitions) continuations.push(TOOL.AUDIT_NAMED_SYMBOL);
+  if (!hasSelectedDefinitions) continuations.push(hasFileHint ? TOOL.DOCUMENT_SYMBOLS : TOOL.WORKSPACE_SYMBOLS);
+  if (!hasOneSelectedDefinition) continuations.push(TOOL.AUDIT_SYMBOL);
+  if (operation.audits.length > 0) continuations.push(TOOL.REFERENCE_PAGE);
+  if (operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)) {
+    continuations.push(TOOL.UNRESOLVED_REFERENCE_PAGE);
+  }
+  return continuations;
+}
+
 async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions, includeDeclaration, maxCandidates}) {
   const resolvedRoot = await existingDirectory(root);
   const discovery = await semanticWorkspaceSymbols(resolvedRoot, symbol, maxCandidates);
@@ -2322,17 +2345,12 @@ server.registerTool(
           requestedSymbol: args.symbol,
           exactDefinitionsFound: operation.exactDefinitions.length,
           definitionsMatchingFileFilter: operation.matchingDefinitions.length,
+          definitionSelectionStatus: definitionSelectionStatus(operation.matchingDefinitions),
           definitions: operation.audits.map((audit, index) => countSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
         presentation: {mode: PRESENTATION_MODE.COUNT_ONLY},
-        continueWith: [
-          TOOL.AUDIT_NAMED_SYMBOL,
-          TOOL.REFERENCE_PAGE,
-          ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-            ? [TOOL.UNRESOLVED_REFERENCE_PAGE]
-            : []),
-        ],
+        continueWith: namedSymbolContinuations(operation, true, Boolean(args.fileHint)),
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2427,17 +2445,12 @@ server.registerTool(
           requestedSymbol: args.symbol,
           exactDefinitionsFound: operation.exactDefinitions.length,
           definitionsMatchingFileFilter: operation.matchingDefinitions.length,
+          definitionSelectionStatus: definitionSelectionStatus(operation.matchingDefinitions),
           audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
         presentation: {mode: PRESENTATION_MODE.COMPACT_SUMMARY},
-        continueWith: [
-          TOOL.REFERENCE_PAGE,
-          TOOL.DEFINITION,
-          ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-            ? [TOOL.UNRESOLVED_REFERENCE_PAGE]
-            : []),
-        ],
+        continueWith: namedSymbolContinuations(operation, false, Boolean(args.fileHint)),
       });
     } catch (error) {
       return toolError(tool, error);
