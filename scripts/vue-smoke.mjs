@@ -8,13 +8,14 @@ import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
-import {DEFINITION_RESOLUTION_METHOD, DEFINITION_SELECTION_STATUS, TOOL} from "../protocol.mjs";
+import {ACCOUNTING_STATUS, COLLECTION_STATUS, DEFINITION_RESOLUTION_METHOD, DEFINITION_SELECTION_STATUS, TOOL} from "../protocol.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-vue-smoke-"));
 const src = path.join(workspace, "src");
 const component = path.join(src, "CounterPanel.vue");
 const childComponent = path.join(src, "ChildPanel.vue");
+const unrelatedComponent = path.join(src, "UnrelatedPanel.vue");
 await mkdir(src, {recursive: true});
 await writeFile(path.join(workspace, "package.json"), JSON.stringify({private: true, type: "module"}));
 await writeFile(
@@ -34,6 +35,7 @@ await writeFile(
     "<template><span>{{ label }}</span></template>",
   ].join("\n"),
 );
+await writeFile(unrelatedComponent, '<script setup lang="ts">\nconst unrelated = true;\n</script>\n<template>{{ unrelated }}</template>');
 await writeFile(
   component,
   [
@@ -118,8 +120,11 @@ try {
   if (filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
     throw new Error("Vue named count recommended a reference page without a reusable reference set");
   }
-  if (!filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.DOCUMENT_SYMBOLS)) {
-    throw new Error("Vue named count did not recommend structural navigation after an empty file filter");
+  if (!filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.AUDIT_NAMED_SYMBOL)) {
+    throw new Error("Vue named count did not recommend binding-aware named audit after an empty file filter");
+  }
+  if (filenameOnlyCount.structuredContent?.result?.fileHintResolution) {
+    throw new Error("Vue named count performed deep file-hint binding resolution");
   }
 
   const filenameOnlyAudit = await client.callTool({
@@ -130,11 +135,75 @@ try {
   if (filenameOnlyAudit.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.NONE) {
     throw new Error("Vue named audit did not preserve the empty definition selection");
   }
+  const fileHintResolution = filenameOnlyAudit.structuredContent?.result?.fileHintResolution;
+  if (!fileHintResolution || fileHintResolution.textMatchesResolvingToFileFilter < 1) {
+    throw new Error("Vue named audit did not verify a binding to the hinted SFC");
+  }
+  if (fileHintResolution.accountingStatus !== ACCOUNTING_STATUS.COMPLETE) {
+    throw new Error("Vue named audit did not account for every file-hint binding candidate");
+  }
+  if (path.basename(fileHintResolution.sourcePositionForAudit?.file || "") !== path.basename(component)) {
+    throw new Error("Vue named audit did not return a verified source position for follow-up");
+  }
+  if (
+    !fileHintResolution.sourcePositionForAudit?.definitions?.some(
+      (definition) => path.basename(definition.file) === path.basename(childComponent),
+    )
+  ) {
+    throw new Error("Vue named audit source position did not resolve to the hinted SFC");
+  }
   if (filenameOnlyAudit.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
     throw new Error("Vue named audit recommended a reference page without a reusable reference set");
   }
   if (!filenameOnlyAudit.structuredContent?.continueWith?.includes(TOOL.AUDIT_SYMBOL)) {
     throw new Error("Vue named audit did not recommend position-based audit after an empty file filter");
+  }
+  if (filenameOnlyAudit.structuredContent?.continueWith?.includes(TOOL.DOCUMENT_SYMBOLS)) {
+    throw new Error("Vue named audit recommended structural discovery after verifying a binding position");
+  }
+
+  const verifiedBindingAudit = await client.callTool({
+    name: TOOL.AUDIT_SYMBOL,
+    arguments: {
+      root: workspace,
+      file: fileHintResolution.sourcePositionForAudit.file,
+      line: fileHintResolution.sourcePositionForAudit.range.start.line,
+      column: fileHintResolution.sourcePositionForAudit.range.start.column,
+    },
+  });
+  if (verifiedBindingAudit.isError) {
+    throw new Error(verifiedBindingAudit.content?.[0]?.text || "Vue verified binding position audit failed");
+  }
+  if (
+    !verifiedBindingAudit.structuredContent?.result?.definition?.locations?.some(
+      (definition) => path.basename(definition.file) === path.basename(childComponent),
+    )
+  ) {
+    throw new Error("Vue verified binding position was not reusable by the position-based audit");
+  }
+
+  const limitedBindingAudit = await client.callTool({
+    name: TOOL.AUDIT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "ChildPanel", fileHint: "ChildPanel.vue", maxCandidates: 1},
+  });
+  if (limitedBindingAudit.isError) throw new Error(limitedBindingAudit.content?.[0]?.text || "Vue limited binding audit failed");
+  if (limitedBindingAudit.structuredContent?.collection?.status !== COLLECTION_STATUS.LIMITED) {
+    throw new Error("Vue limited binding audit did not report limited collection");
+  }
+  if (limitedBindingAudit.structuredContent?.result?.fileHintResolution?.accountingStatus !== ACCOUNTING_STATUS.INCOMPLETE) {
+    throw new Error("Vue limited binding audit claimed complete text-match accounting");
+  }
+
+  const unrelatedFileAudit = await client.callTool({
+    name: TOOL.AUDIT_NAMED_SYMBOL,
+    arguments: {root: workspace, symbol: "ChildPanel", fileHint: "UnrelatedPanel.vue"},
+  });
+  if (unrelatedFileAudit.isError) throw new Error(unrelatedFileAudit.content?.[0]?.text || "Vue unrelated-file audit failed");
+  if (unrelatedFileAudit.structuredContent?.result?.fileHintResolution?.textMatchesResolvingToFileFilter !== 0) {
+    throw new Error("Vue named audit fabricated a binding to an unrelated SFC");
+  }
+  if (!unrelatedFileAudit.structuredContent?.continueWith?.includes(TOOL.DOCUMENT_SYMBOLS)) {
+    throw new Error("Vue named audit did not recommend structural navigation when no binding matched the hinted SFC");
   }
 
   console.log(
@@ -143,6 +212,7 @@ try {
         vueDocumentSymbols: "ok",
         vueTemplateComponentDefinition: "ok",
         vueNamedDefinitionSelection: "ok",
+        vueFileHintBindingResolution: "ok",
         yamlRepresentation: "ok",
       },
       null,

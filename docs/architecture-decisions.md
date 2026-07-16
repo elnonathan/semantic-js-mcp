@@ -71,3 +71,5 @@ Detailed verified locations may be grouped by their exact source file because th
 Named-symbol tools report whether exact declaration filtering selected zero, one, or multiple definitions. A `fileHint` narrows declarations already reported by the owning provider; it does not turn a matching filename, Vue component name, import alias, or test double into declaration evidence.
 
 When selection is empty or ambiguous, continuation guidance points consumers toward structural or position-based tools. Reference-page guidance appears only when the response contains a reusable reference set. This keeps ambiguity actionable without guessing which homonymous symbol the consumer intended.
+
+A named audit may separately verify that an exact text occurrence resolves to a `fileHint` target. This binding evidence retains its source position, target definitions, resolution method, complete classification counts, and unresolved accounting. It does not promote the target filename or local alias into a named declaration, and the lighter count tool does not perform these per-match definition requests.

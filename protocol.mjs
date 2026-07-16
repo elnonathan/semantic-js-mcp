@@ -163,9 +163,9 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.DIAGNOSTICS]:
     "Returns versioned diagnostics for one file and marks evidence untrusted when the language server does not confirm the current document.",
   [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
-  [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
-  [TOOL.AUDIT_NAMED_SYMBOL]: `Returns a compact definition, signature, coverage, and freshness summary for an exact symbol name. Use ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.AUDIT_NAMED_SYMBOL]: `Returns a compact exact-name audit and verifies source bindings to fileHint when no declaration is selected. Use ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.AUDIT_SYMBOL]: `Returns a compact definition, signature, coverage, and freshness summary for one source position. Use ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
   [TOOL.REFERENCES]: `Returns the first page of verified source locations and detailed collection evidence. Use ${TOOL.REFERENCE_PAGE} for later pages.`,
   [TOOL.REFERENCE_PAGE]: `Returns a page from a freshness-checked reference set created by a count, audit, or ${TOOL.REFERENCES} call.`,

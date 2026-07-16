@@ -107,6 +107,8 @@ For Vue template tags, `lsp_definition` and position audits try the language ser
 
 Named counts and audits report `definitionSelectionStatus`. Read `no-definition-selected`, `one-definition-selected`, and `multiple-definitions-selected` literally after applying any `fileHint`. A Vue filename is not declaration evidence. When selection is empty or multiple, follow the returned `lsp_document_symbols`, `lsp_workspace_symbols`, or `lsp_audit_symbol` continuation to locate and audit an exact source position. Use `lsp_reference_page` only when the result supplies a `referenceSetId`.
 
+When a named count with `fileHint` selects no declaration, follow its `lsp_audit_named_symbol` continuation for binding verification. In the audit, `fileHintResolution.textMatchesResolvingToFileFilter` counts exact text matches whose definitions resolve to the hinted path. `sourcePositionForAudit` is one verified occurrence that can be passed to `lsp_audit_symbol`; its `definitions` are the matched targets. Keep `definitionSelectionStatus: no-definition-selected` distinct from this binding evidence. Read the resolved-elsewhere, unresolved, and accounting fields before relying on coverage.
+
 Position-audit signatures report `signatureSource`. `resolved-definition-hover` means the query position had no hover information and the MCP obtained the signature from a resolved declaration. `not-reported` means neither location produced signature evidence.
 
 The MCP reports evidence status, not code approval. CI consumers may use `scripts/semantic-js-mcp-ci.mjs` to map complete evidence and verified diagnostics to the literal `pass`, `fail`, `untrusted`, or `blocked` policy states.

@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Advance the canonical result schema to version 6 for the compact audit presentation contract.
 - Document migration from schema 5 and reject legacy envelopes in canonical-result validation.
 - Report whether named-symbol filtering selected zero, one, or multiple exact definitions, and recommend only continuation tools supported by the returned evidence.
+- Verify import and usage bindings against `fileHint` during named audits without treating the hinted filename as a declaration.
 
 ## [0.8.1] - 2026-07-15
 

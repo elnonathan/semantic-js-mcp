@@ -30,9 +30,9 @@ Result schema version: `6`
 - `lsp_hover`: `Returns inferred type information and documentation for one source position. Use lsp_definition for declaration identity.`
 - `lsp_diagnostics`: `Returns versioned diagnostics for one file and marks evidence untrusted when the language server does not confirm the current document.`
 - `lsp_count_text_matches`: `Counts exact identifier text matches without semantic verification. Use lsp_count_named_symbol or lsp_audit_named_symbol to verify identity.`
-- `lsp_count_named_symbol`: `Returns exact-definition and verified-reference counts for a symbol name. Use lsp_audit_named_symbol for identity and signature or lsp_reference_page with a returned referenceSetId for locations.`
+- `lsp_count_named_symbol`: `Returns exact-definition and verified-reference counts for a symbol name. Use lsp_audit_named_symbol for identity, signature, or file-hint binding verification and lsp_reference_page with a returned referenceSetId for locations.`
 - `lsp_count_references`: `Returns verified-reference counts for the symbol at one source position. Use lsp_audit_symbol for identity and signature or lsp_reference_page with the returned referenceSetId for locations.`
-- `lsp_audit_named_symbol`: `Returns a compact definition, signature, coverage, and freshness summary for an exact symbol name. Use lsp_reference_page with a returned referenceSetId for locations.`
+- `lsp_audit_named_symbol`: `Returns a compact exact-name audit and verifies source bindings to fileHint when no declaration is selected. Use lsp_reference_page with a returned referenceSetId for locations.`
 - `lsp_audit_symbol`: `Returns a compact definition, signature, coverage, and freshness summary for one source position. Use lsp_reference_page with the returned referenceSetId for locations.`
 - `lsp_references`: `Returns the first page of verified source locations and detailed collection evidence. Use lsp_reference_page for later pages.`
 - `lsp_reference_page`: `Returns a page from a freshness-checked reference set created by a count, audit, or lsp_references call.`

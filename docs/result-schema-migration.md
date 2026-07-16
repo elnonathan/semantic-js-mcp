@@ -30,6 +30,12 @@ produced a reusable reference set. Empty or multiple selection recommends
 structural or position-based navigation instead of implying that a filename or
 common symbol name established identity.
 
+When `fileHint` selects no exact declaration, a named audit may additionally
+return `fileHintResolution`. Its counts classify exact text matches by whether
+their definitions resolve to the hinted path, elsewhere, or not at all. A
+reported `sourcePositionForAudit` is one verified follow-up position and does
+not change `definitionSelectionStatus`.
+
 The collection contract is unchanged: omitted collection limits remain
 unlimited, pagination affects presentation only, and unresolved candidates keep
 the collection partial. Schema 6 does not convert incomplete evidence into a

@@ -1534,8 +1534,8 @@ function presentUnresolvedReferenceSet(entry, offset, pageSize) {
   };
 }
 
-async function semanticWorkspaceSymbols(root, query, maxCandidates) {
-  const search = await rgIdentifierCandidates(root, query, maxCandidates, false);
+async function semanticWorkspaceSymbols(root, query, maxCandidates, {exactIdentifier = false} = {}) {
+  const search = await rgIdentifierCandidates(root, query, maxCandidates, exactIdentifier);
   const candidateFiles = [...new Set(search.candidates.map((candidate) => candidate.file))];
   const files = candidateFiles;
   let unresolvedFileCount = 0;
@@ -1551,6 +1551,7 @@ async function semanticWorkspaceSymbols(root, query, maxCandidates) {
   });
   return {
     symbols: groups.flat(),
+    candidates: exactIdentifier ? search.candidates : undefined,
     candidateCount: search.candidates.length,
     totalTextualCandidateCount: search.totalCandidateCount,
     candidateScanTruncated: search.truncated,
@@ -1856,14 +1857,68 @@ function definitionSelectionStatus(definitions) {
   return DEFINITION_SELECTION_STATUS.MULTIPLE;
 }
 
+function sourceRange(candidate, identifier) {
+  return {
+    start: {line: candidate.line, column: candidate.column},
+    end: {line: candidate.line, column: candidate.column + identifier.length},
+  };
+}
+
+async function resolveFileHintBindings(discovery, root, identifier, normalizedHint) {
+  const results = await mapLimit(discovery.candidates, CROSS_WORKSPACE_CONCURRENCY, async (candidate) => {
+    try {
+      const resolved = await definitionsAt(candidate.file, root, candidate.line, candidate.column);
+      if (resolved.definitions.length === 0) return {definitionUnresolved: true};
+      const matchingDefinitions = resolved.definitions.filter((definition) =>
+        definition.file.replaceAll("\\", "/").toLowerCase().includes(normalizedHint),
+      );
+      if (matchingDefinitions.length === 0) return {definitionResolvedElsewhere: true};
+      return {
+        sourcePosition: {file: candidate.file, range: sourceRange(candidate, identifier)},
+        definitions: matchingDefinitions,
+        resolutionMethod: publicDefinitionMethod(resolved.via),
+      };
+    } catch {
+      return {definitionUnresolved: true};
+    }
+  });
+  const matching = results.filter((result) => result.sourcePosition);
+  const unresolvedCount = results.filter((result) => result.definitionUnresolved).length;
+  const resolvedElsewhereCount = results.filter((result) => result.definitionResolvedElsewhere).length;
+  const classifiedCount = matching.length + resolvedElsewhereCount + unresolvedCount;
+  const [sourcePositionForAudit] = matching;
+  return {
+    textMatchesFound: discovery.totalTextualCandidateCount,
+    textMatchesChecked: discovery.candidateCount,
+    textMatchesResolvingToFileFilter: matching.length,
+    textMatchesResolvingElsewhere: resolvedElsewhereCount,
+    textMatchesWhoseDefinitionCouldNotBeResolved: unresolvedCount,
+    accountingStatus:
+      !discovery.candidateScanTruncated && classifiedCount === discovery.totalTextualCandidateCount
+        ? ACCOUNTING_STATUS.COMPLETE
+        : ACCOUNTING_STATUS.INCOMPLETE,
+    sourcePositionForAudit: sourcePositionForAudit
+      ? {
+          ...sourcePositionForAudit.sourcePosition,
+          definitions: sourcePositionForAudit.definitions,
+          resolutionMethod: sourcePositionForAudit.resolutionMethod,
+        }
+      : undefined,
+  };
+}
+
 function namedSymbolContinuations(operation, includeNamedAudit, hasFileHint) {
   const continuations = [];
   const selectionStatus = definitionSelectionStatus(operation.matchingDefinitions);
   const hasSelectedDefinitions = selectionStatus !== DEFINITION_SELECTION_STATUS.NONE;
   const hasOneSelectedDefinition = selectionStatus === DEFINITION_SELECTION_STATUS.ONE;
+  const hasVerifiedFileHintBinding = Boolean(operation.fileHintResolution?.sourcePositionForAudit);
 
-  if (includeNamedAudit && hasSelectedDefinitions) continuations.push(TOOL.AUDIT_NAMED_SYMBOL);
-  if (!hasSelectedDefinitions) continuations.push(hasFileHint ? TOOL.DOCUMENT_SYMBOLS : TOOL.WORKSPACE_SYMBOLS);
+  if (includeNamedAudit && (hasSelectedDefinitions || hasFileHint)) continuations.push(TOOL.AUDIT_NAMED_SYMBOL);
+  if (includeNamedAudit && !hasSelectedDefinitions && hasFileHint) return continuations;
+  if (!hasSelectedDefinitions && !hasVerifiedFileHintBinding) {
+    continuations.push(hasFileHint ? TOOL.DOCUMENT_SYMBOLS : TOOL.WORKSPACE_SYMBOLS);
+  }
   if (!hasOneSelectedDefinition) continuations.push(TOOL.AUDIT_SYMBOL);
   if (operation.audits.length > 0) continuations.push(TOOL.REFERENCE_PAGE);
   if (operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)) {
@@ -1872,9 +1927,12 @@ function namedSymbolContinuations(operation, includeNamedAudit, hasFileHint) {
   return continuations;
 }
 
-async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions, includeDeclaration, maxCandidates}) {
+async function collectNamedSymbolAudits(
+  {root, symbol, fileHint, maxDefinitions, includeDeclaration, maxCandidates},
+  {includeFileHintResolution = false} = {},
+) {
   const resolvedRoot = await existingDirectory(root);
-  const discovery = await semanticWorkspaceSymbols(resolvedRoot, symbol, maxCandidates);
+  const discovery = await semanticWorkspaceSymbols(resolvedRoot, symbol, maxCandidates, {exactIdentifier: true});
   const exactDefinitions = dedupeLocations(discovery.symbols.filter((candidate) => candidate.name === symbol));
   const normalizedHint = fileHint?.replaceAll("\\", "/").toLowerCase();
   const matchingDefinitions = normalizedHint
@@ -1889,10 +1947,16 @@ async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions,
       maxDiagnostics: undefined,
     }),
   );
+  const fileHintResolution =
+    includeFileHintResolution && normalizedHint && matchingDefinitions.length === 0
+      ? await resolveFileHintBindings(discovery, resolvedRoot, symbol, normalizedHint)
+      : undefined;
   const stoppedByDefinitionLimit = selectedDefinitions.length < matchingDefinitions.length;
   const stoppedByCandidateLimit = discovery.candidateScanTruncated || audits.some((audit) => audit.referenceSummary.collectionTruncated);
   const unresolvedCount =
-    discovery.unresolvedFileCount + audits.reduce((total, audit) => total + audit.referenceSummary.unresolvedCandidateCount, 0);
+    discovery.unresolvedFileCount +
+    audits.reduce((total, audit) => total + audit.referenceSummary.unresolvedCandidateCount, 0) +
+    (fileHintResolution?.textMatchesWhoseDefinitionCouldNotBeResolved || 0);
   return {
     resolvedRoot,
     discovery,
@@ -1900,6 +1964,7 @@ async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions,
     matchingDefinitions,
     selectedDefinitions,
     audits,
+    fileHintResolution,
     collection: {
       status: collectionStatus({stoppedByLimit: stoppedByDefinitionLimit || stoppedByCandidateLimit, unresolvedCount}),
       stoppedByLimit: stoppedByDefinitionLimit || stoppedByCandidateLimit,
@@ -2430,7 +2495,7 @@ server.registerTool(
   async (args) => {
     const tool = TOOL.AUDIT_NAMED_SYMBOL;
     try {
-      const operation = await collectNamedSymbolAudits(args);
+      const operation = await collectNamedSymbolAudits(args, {includeFileHintResolution: true});
       return toolResult(tool, {
         request: {
           root: operation.resolvedRoot,
@@ -2446,6 +2511,7 @@ server.registerTool(
           exactDefinitionsFound: operation.exactDefinitions.length,
           definitionsMatchingFileFilter: operation.matchingDefinitions.length,
           definitionSelectionStatus: definitionSelectionStatus(operation.matchingDefinitions),
+          fileHintResolution: operation.fileHintResolution,
           audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
