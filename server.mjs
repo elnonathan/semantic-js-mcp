@@ -31,6 +31,7 @@ import {
   FORBIDDEN_PUBLIC_FIELD,
   LANGUAGE_ID,
   LIMIT_MODE,
+  LSP_METHOD,
   NODE_EVENT,
   INTERNAL_RESOLUTION_SOURCE,
   PRESENTATION_MODE,
@@ -192,7 +193,13 @@ function normalizedLimit(value) {
   return value === undefined ? {mode: LIMIT_MODE.UNLIMITED} : {mode: LIMIT_MODE.MAXIMUM, maximum: value};
 }
 
-function diagnosticEvidenceReason(freshness) {
+function diagnosticEvidenceReason(freshness, snapshotConfirmed = false) {
+  if (freshness === DIAGNOSTIC_FRESHNESS.DIFFERENT_CONTENT) {
+    return DIAGNOSTIC_EVIDENCE_REASON.DOCUMENT_CONTENT_CHANGED_DURING_ACQUISITION;
+  }
+  if (snapshotConfirmed) {
+    return DIAGNOSTIC_EVIDENCE_REASON.CURRENT_DOCUMENT_SNAPSHOT_CONFIRMED;
+  }
   if (freshness === DIAGNOSTIC_FRESHNESS.CURRENT) {
     return DIAGNOSTIC_EVIDENCE_REASON.CURRENT_DOCUMENT_VERSION_CONFIRMED;
   }
@@ -539,6 +546,8 @@ class LspClient {
     this.documents = new Map();
     this.diagnosticsCache = new Map();
     this.diagnosticWaiters = new Map();
+    this.diagnosticAcquisitions = new Map();
+    this.serverCapabilities = {};
     this.tsserverBridge = undefined;
     this.ready = this.start();
   }
@@ -569,7 +578,7 @@ class LspClient {
 
     const tsdk = findTsdk(this.root);
     if (this.kind === LANGUAGE_ID.VUE) this.tsserverBridge = new TsserverBridge(this.root, tsdk, true);
-    await this.request(
+    const initializeResult = await this.request(
       "initialize",
       {
         processId: process.pid,
@@ -583,8 +592,9 @@ class LspClient {
             references: {},
             documentSymbol: {hierarchicalDocumentSymbolSupport: true},
             publishDiagnostics: {relatedInformation: true},
+            diagnostic: {dynamicRegistration: false, relatedDocumentSupport: false},
           },
-          workspace: {symbol: {}},
+          workspace: {symbol: {}, diagnostics: {refreshSupport: true}},
         },
         initializationOptions:
           this.kind === LANGUAGE_ID.VUE
@@ -593,6 +603,7 @@ class LspClient {
       },
       true,
     );
+    this.serverCapabilities = initializeResult?.capabilities || {};
     process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] initialized\n`);
     this.notify("initialized", {});
   }
@@ -632,7 +643,7 @@ class LspClient {
       return;
     }
 
-    if (message.method === "textDocument/publishDiagnostics") {
+    if (message.method === LSP_METHOD.PUBLISH_DIAGNOSTICS) {
       const openDocument = this.documents.get(message.params.uri);
       const entry = {
         items: message.params.diagnostics || [],
@@ -640,10 +651,23 @@ class LspClient {
         openDocumentVersionAtReceipt: openDocument?.version,
         receivedAt: Date.now(),
       };
+      const acquisition = this.diagnosticAcquisitions.get(message.params.uri);
+      if (acquisition?.completed && acquisition.sourceReport !== entry) {
+        this.diagnosticAcquisitions.delete(message.params.uri);
+      }
       this.diagnosticsCache.set(message.params.uri, entry);
       const waiters = this.diagnosticWaiters.get(message.params.uri) || [];
-      this.diagnosticWaiters.delete(message.params.uri);
-      for (const resolve of waiters) resolve(entry);
+      const remaining = [];
+      for (const waiter of waiters) {
+        if (waiter.documentVersion !== entry.reportedDocumentVersion) {
+          remaining.push(waiter);
+          continue;
+        }
+        clearTimeout(waiter.timer);
+        waiter.resolve(entry);
+      }
+      if (remaining.length > 0) this.diagnosticWaiters.set(message.params.uri, remaining);
+      else this.diagnosticWaiters.delete(message.params.uri);
       return;
     }
 
@@ -664,6 +688,8 @@ class LspClient {
       let result = null;
       if (message.method === "workspace/configuration") {
         result = (message.params?.items || []).map(() => ({}));
+      } else if (message.method === LSP_METHOD.WORKSPACE_DIAGNOSTIC_REFRESH) {
+        this.invalidateAllDiagnostics();
       } else if (message.method === "workspace/applyEdit") {
         result = {applied: false, failureReason: `${PRODUCT.DISPLAY_NAME} is read-only`};
       }
@@ -708,7 +734,7 @@ class LspClient {
       this.notify("textDocument/didOpen", {textDocument: {uri, languageId: languageId(file), version: 1, text}});
     } else if (current.text !== text) {
       invalidateReferenceSetsForFile(file);
-      this.diagnosticsCache.delete(uri);
+      this.invalidateDiagnostics(uri);
       const version = current.version + 1;
       this.documents.set(uri, {text, version});
       this.notify("textDocument/didChange", {textDocument: {uri, version}, contentChanges: [{text}]});
@@ -728,53 +754,127 @@ class LspClient {
     return this.tsserverBridge;
   }
 
+  clearDiagnosticWaiters(uri) {
+    const waiters = this.diagnosticWaiters.get(uri) || [];
+    this.diagnosticWaiters.delete(uri);
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(undefined);
+    }
+  }
+
+  invalidateDiagnostics(uri) {
+    this.diagnosticsCache.delete(uri);
+    this.clearDiagnosticWaiters(uri);
+    this.diagnosticAcquisitions.delete(uri);
+  }
+
+  invalidateAllDiagnostics() {
+    const uris = new Set([...this.diagnosticsCache.keys(), ...this.diagnosticWaiters.keys(), ...this.diagnosticAcquisitions.keys()]);
+    for (const uri of uris) this.invalidateDiagnostics(uri);
+  }
+
+  waitForPublishedDiagnostics(uri, documentVersion) {
+    const cached = this.diagnosticsCache.get(uri);
+    if (cached?.reportedDocumentVersion === documentVersion) return Promise.resolve(cached);
+    return new Promise((resolve) => {
+      const waiter = {documentVersion, resolve, timer: undefined};
+      waiter.timer = setTimeout(() => {
+        const waiters = this.diagnosticWaiters.get(uri) || [];
+        const remaining = waiters.filter((candidate) => candidate !== waiter);
+        if (remaining.length > 0) this.diagnosticWaiters.set(uri, remaining);
+        else this.diagnosticWaiters.delete(uri);
+        resolve(this.diagnosticsCache.get(uri));
+      }, DIAGNOSTIC_WAIT_MS);
+      this.diagnosticWaiters.set(uri, [...(this.diagnosticWaiters.get(uri) || []), waiter]);
+    });
+  }
+
+  supportsDiagnosticPull() {
+    return Boolean(this.serverCapabilities.diagnosticProvider);
+  }
+
+  async acquireDiagnostics(uri, documentVersion, documentContentFingerprint) {
+    if (this.supportsDiagnosticPull()) {
+      try {
+        const pulled = await this.request(LSP_METHOD.DOCUMENT_DIAGNOSTIC, {textDocument: {uri}});
+        const current = this.documents.get(uri);
+        const snapshotConfirmed = current?.version === documentVersion && textFingerprint(current.text) === documentContentFingerprint;
+        return {
+          items: pulled?.items || [],
+          documentVersion,
+          reportedDocumentVersion: undefined,
+          reportReceived: true,
+          sourceReport: undefined,
+          snapshotConfirmed,
+        };
+      } catch {
+        // A provider can advertise pull support and still reject a request. Its
+        // push channel remains eligible for current-version evidence.
+      }
+    }
+    const published = await this.waitForPublishedDiagnostics(uri, documentVersion);
+    return {
+      items: published?.items || [],
+      documentVersion,
+      reportedDocumentVersion: published?.reportedDocumentVersion,
+      reportReceived: Boolean(published),
+      sourceReport: published,
+      snapshotConfirmed: false,
+    };
+  }
+
   async diagnostics(file) {
     const uri = await this.syncDocument(file);
     const document = this.documents.get(uri);
     const documentVersion = document?.version;
+    const documentContentFingerprint = textFingerprint(document?.text || "");
+    const existing = this.diagnosticAcquisitions.get(uri);
+    if (existing?.documentVersion === documentVersion && existing.documentContentFingerprint === documentContentFingerprint) {
+      return existing.promise;
+    }
     const startedAt = Date.now();
-    const published = await new Promise((resolve) => {
-      const cached = this.diagnosticsCache.get(uri);
-      if (cached?.reportedDocumentVersion === documentVersion) {
-        resolve(cached);
-        return;
-      }
-      const wrapped = (entry) => {
-        clearTimeout(timer);
-        resolve(entry);
-      };
-      const timer = setTimeout(() => {
-        const waiters = this.diagnosticWaiters.get(uri) || [];
-        this.diagnosticWaiters.set(
-          uri,
-          waiters.filter((waiter) => waiter !== wrapped),
-        );
-        resolve(this.diagnosticsCache.get(uri));
-      }, DIAGNOSTIC_WAIT_MS);
-      this.diagnosticWaiters.set(uri, [...(this.diagnosticWaiters.get(uri) || []), wrapped]);
-    });
-    const reportedDocumentVersion = published?.reportedDocumentVersion;
-    const freshness = !published
-      ? DIAGNOSTIC_FRESHNESS.NOT_REPORTED_FOR_CURRENT_DOCUMENT
-      : reportedDocumentVersion === undefined
-        ? DIAGNOSTIC_FRESHNESS.VERSION_NOT_REPORTED
-        : reportedDocumentVersion === documentVersion
-          ? DIAGNOSTIC_FRESHNESS.CURRENT
-          : DIAGNOSTIC_FRESHNESS.DIFFERENT_VERSION;
-    return {
-      items: published?.items || [],
+    const acquisition = {
       documentVersion,
-      reportedDocumentVersion,
-      freshness,
-      documentContentFingerprint: textFingerprint(document?.text || ""),
-      waitedMilliseconds: Date.now() - startedAt,
+      documentContentFingerprint,
+      promise: undefined,
+      completed: false,
+      sourceReport: undefined,
     };
+    acquisition.promise = this.acquireDiagnostics(uri, documentVersion, documentContentFingerprint).then(async (report) => {
+      const currentText = await readFile(fromUri(uri), "utf8").catch(() => undefined);
+      const contentStillCurrent = currentText !== undefined && textFingerprint(currentText) === documentContentFingerprint;
+      const freshness = !contentStillCurrent
+        ? DIAGNOSTIC_FRESHNESS.DIFFERENT_CONTENT
+        : report.snapshotConfirmed
+          ? DIAGNOSTIC_FRESHNESS.CURRENT
+          : report.reportedDocumentVersion === undefined
+            ? report.reportReceived
+              ? DIAGNOSTIC_FRESHNESS.VERSION_NOT_REPORTED
+              : DIAGNOSTIC_FRESHNESS.NOT_REPORTED_FOR_CURRENT_DOCUMENT
+            : report.reportedDocumentVersion === documentVersion
+              ? DIAGNOSTIC_FRESHNESS.CURRENT
+              : DIAGNOSTIC_FRESHNESS.DIFFERENT_VERSION;
+      acquisition.completed = true;
+      acquisition.sourceReport = report.sourceReport;
+      const newerPublishedReport = report.sourceReport && this.diagnosticsCache.get(uri) !== report.sourceReport;
+      if ((freshness !== DIAGNOSTIC_FRESHNESS.CURRENT || newerPublishedReport) && this.diagnosticAcquisitions.get(uri) === acquisition) {
+        this.diagnosticAcquisitions.delete(uri);
+      }
+      return {
+        ...report,
+        freshness,
+        documentContentFingerprint,
+        waitedMilliseconds: Date.now() - startedAt,
+      };
+    });
+    this.diagnosticAcquisitions.set(uri, acquisition);
+    return acquisition.promise;
   }
 
   close() {
     this.documents.clear();
-    this.diagnosticsCache.clear();
-    this.diagnosticWaiters.clear();
+    this.invalidateAllDiagnostics();
     this.tsserverBridge?.close();
     if (this.process && !this.process.killed) this.process.kill("SIGTERM");
   }
@@ -2299,7 +2399,7 @@ server.registerTool(
         result: {
           evidence: {
             status: versionConfirmed ? EVIDENCE_STATUS.VERIFIED : EVIDENCE_STATUS.UNTRUSTED,
-            reason: diagnosticEvidenceReason(report.freshness),
+            reason: diagnosticEvidenceReason(report.freshness, report.snapshotConfirmed),
           },
           document: {
             version: report.documentVersion,

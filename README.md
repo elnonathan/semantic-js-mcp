@@ -198,6 +198,8 @@ The inventory is sampled before and after collection. If repository sources chan
 
 Diagnostics clear their cache on `didChange` and report the analyzed document version and content fingerprint as `sha256:<hex>`. Only a language-server report for that exact document version appears under `diagnosticsForCurrentDocument`. Otherwise that field is `null`, `evidence.status` is `untrusted`, and any unconfirmed report is isolated under `unconfirmedDiagnosticReport`. Untrusted diagnostics always produce a partial collection.
 
+The server prefers diagnostic pull when the owning provider advertises it, falls back to push notifications, and shares concurrent requests for the same document snapshot. Push evidence is trusted only when it identifies the current version.
+
 Diagnostic severities are preserved literally. If a language server omits severity, the result reports `not-reported`; it is not silently treated as information, warning, or error.
 
 ### CI policy adapter

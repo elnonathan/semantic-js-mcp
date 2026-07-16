@@ -43,3 +43,8 @@ complete result.
 
 The CI adapter accepts only its canonical schema version. A schema 5 result is
 reported as `blocked` rather than being interpreted through schema 6 rules.
+
+Schema 6 diagnostic evidence may use
+`current-document-snapshot-confirmed` for a pull result or
+`document-content-changed-during-diagnostic-acquisition` when the source no
+longer matches the analyzed snapshot.

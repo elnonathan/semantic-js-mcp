@@ -161,7 +161,7 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.DEFINITION]: `Resolves definitions for one source position. Use ${TOOL.HOVER} for type information or ${TOOL.COUNT_REFERENCES} for impact scope.`,
   [TOOL.HOVER]: `Returns inferred type information and documentation for one source position. Use ${TOOL.DEFINITION} for declaration identity.`,
   [TOOL.DIAGNOSTICS]:
-    "Returns versioned diagnostics for one file and marks evidence untrusted when the language server does not confirm the current document.",
+    "Returns diagnostics for one file and marks evidence untrusted when the current document snapshot cannot be confirmed.",
   [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
   [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
@@ -171,6 +171,12 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.REFERENCE_PAGE]: `Returns a page from a freshness-checked reference set created by a count, audit, or ${TOOL.REFERENCES} call.`,
   [TOOL.UNRESOLVED_REFERENCE_PAGE]:
     "Returns freshness-checked text-match candidates whose definitions could not be resolved, including literal failure reasons.",
+});
+
+export const LSP_METHOD = Object.freeze({
+  DOCUMENT_DIAGNOSTIC: "textDocument/diagnostic",
+  PUBLISH_DIAGNOSTICS: "textDocument/publishDiagnostics",
+  WORKSPACE_DIAGNOSTIC_REFRESH: "workspace/diagnostic/refresh",
 });
 
 export const LIMIT_MODE = Object.freeze({
@@ -202,6 +208,7 @@ export const SIGNATURE_SOURCE = Object.freeze({
 
 export const DIAGNOSTIC_FRESHNESS = Object.freeze({
   CURRENT: "current-document-version",
+  DIFFERENT_CONTENT: "different-document-content",
   VERSION_NOT_REPORTED: "version-not-reported-by-language-server",
   DIFFERENT_VERSION: "different-document-version",
   NOT_REPORTED_FOR_CURRENT_DOCUMENT: "not-reported-for-current-document",
@@ -222,6 +229,8 @@ export const EVIDENCE_STATUS = Object.freeze({
 
 export const DIAGNOSTIC_EVIDENCE_REASON = Object.freeze({
   CURRENT_DOCUMENT_VERSION_CONFIRMED: "current-document-version-confirmed",
+  CURRENT_DOCUMENT_SNAPSHOT_CONFIRMED: "current-document-snapshot-confirmed",
+  DOCUMENT_CONTENT_CHANGED_DURING_ACQUISITION: "document-content-changed-during-diagnostic-acquisition",
   LANGUAGE_SERVER_VERSION_NOT_REPORTED: "language-server-version-not-reported",
   LANGUAGE_SERVER_REPORTED_DIFFERENT_VERSION: "language-server-reported-different-version",
   LANGUAGE_SERVER_DID_NOT_REPORT_CURRENT_DOCUMENT: "language-server-did-not-report-current-document",

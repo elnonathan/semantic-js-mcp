@@ -14,6 +14,7 @@ import {
   CONTENT_FRESHNESS,
   DEFINITION_MATCH,
   DEFINITION_SELECTION_STATUS,
+  DIAGNOSTIC_EVIDENCE_REASON,
   EVIDENCE_STATUS,
   DIAGNOSTIC_FRESHNESS,
   ENVIRONMENT_VARIABLE,
@@ -285,12 +286,21 @@ try {
   );
   assert(hover.result.typeAndDocumentation.includes("repeatedTarget"), "Hover omitted the function signature");
 
-  const initialDiagnostics = assertResult(
-    await client.callTool({
-      name: "lsp_diagnostics",
-      arguments: {file: targetFile},
-    }),
-    "lsp_diagnostics",
+  const [initialDiagnosticsResponse, concurrentInitialDiagnosticsResponse] = await Promise.all([
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: targetFile}}),
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: targetFile}}),
+  ]);
+  const initialDiagnostics = assertResult(initialDiagnosticsResponse, TOOL.DIAGNOSTICS);
+  const concurrentInitialDiagnostics = assertResult(concurrentInitialDiagnosticsResponse, TOOL.DIAGNOSTICS);
+  deepStrictEqual(
+    concurrentInitialDiagnostics.result.document,
+    initialDiagnostics.result.document,
+    "Concurrent diagnostics did not use the same document snapshot",
+  );
+  deepStrictEqual(
+    concurrentInitialDiagnostics.result.evidence,
+    initialDiagnostics.result.evidence,
+    "Concurrent diagnostics disagreed about snapshot evidence",
   );
   const initialDiagnosticsVerified = initialDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED;
   assert(
@@ -706,6 +716,8 @@ try {
   );
   assert(expiredPage.error.code === ERROR_CODE.REFERENCE_SET_NOT_FOUND_OR_EXPIRED, "Expired reference set omitted its literal error code");
 
+  const supersededDiagnosticsPromise = client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: targetFile}});
+  await delay(500);
   await writeFile(
     targetFile,
     [
@@ -715,12 +727,30 @@ try {
       "}",
     ].join("\n"),
   );
-  const changedDiagnostics = assertResult(
-    await client.callTool({
-      name: "lsp_diagnostics",
-      arguments: {file: targetFile},
-    }),
-    "lsp_diagnostics",
+  const supersededDiagnostics = assertResult(await supersededDiagnosticsPromise, TOOL.DIAGNOSTICS);
+  assert(
+    supersededDiagnostics.result.evidence.status === EVIDENCE_STATUS.UNTRUSTED,
+    "Diagnostics trusted content that changed during acquisition",
+  );
+  assert(
+    supersededDiagnostics.result.evidence.reason === DIAGNOSTIC_EVIDENCE_REASON.DOCUMENT_CONTENT_CHANGED_DURING_ACQUISITION,
+    "Diagnostics omitted the content-change evidence reason",
+  );
+  const [changedDiagnosticsResponse, concurrentChangedDiagnosticsResponse] = await Promise.all([
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: targetFile}}),
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: targetFile}}),
+  ]);
+  const changedDiagnostics = assertResult(changedDiagnosticsResponse, TOOL.DIAGNOSTICS);
+  const concurrentChangedDiagnostics = assertResult(concurrentChangedDiagnosticsResponse, TOOL.DIAGNOSTICS);
+  deepStrictEqual(
+    concurrentChangedDiagnostics.result.document,
+    changedDiagnostics.result.document,
+    "Concurrent changed diagnostics did not use the same document snapshot",
+  );
+  deepStrictEqual(
+    concurrentChangedDiagnostics.result.evidence,
+    changedDiagnostics.result.evidence,
+    "Concurrent changed diagnostics disagreed about snapshot evidence",
   );
   assert(
     changedDiagnostics.result.document.version > initialDiagnostics.result.document.version,
@@ -765,6 +795,8 @@ try {
         declarationExclusionAccounting: "ok",
         nodeModuleExtensions: "ok",
         diagnosticVersionReporting: "ok",
+        sharedDiagnosticAcquisition: "ok",
+        diagnosticContentFreshness: "ok",
         automaticMemoryCleanup: "ok",
         ambiguousPublicFields: "absent",
       },

@@ -8,7 +8,15 @@ import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
-import {ACCOUNTING_STATUS, COLLECTION_STATUS, DEFINITION_RESOLUTION_METHOD, DEFINITION_SELECTION_STATUS, TOOL} from "../protocol.mjs";
+import {
+  ACCOUNTING_STATUS,
+  COLLECTION_STATUS,
+  DEFINITION_RESOLUTION_METHOD,
+  DEFINITION_SELECTION_STATUS,
+  DIAGNOSTIC_EVIDENCE_REASON,
+  EVIDENCE_STATUS,
+  TOOL,
+} from "../protocol.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-vue-smoke-"));
@@ -67,6 +75,31 @@ try {
   const names = response.structuredContent?.result?.symbols?.map((symbol) => symbol.name) || [];
   if (!names.includes("increment") || !names.includes("nextCount")) {
     throw new Error(`Expected Vue script symbols were not returned: ${names.join(", ")}`);
+  }
+  const [vueDiagnosticsResponse, concurrentVueDiagnosticsResponse] = await Promise.all([
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: component, root: workspace}}),
+    client.callTool({name: TOOL.DIAGNOSTICS, arguments: {file: component, root: workspace}}),
+  ]);
+  if (vueDiagnosticsResponse.isError || concurrentVueDiagnosticsResponse.isError) {
+    throw new Error("Concurrent Vue diagnostics failed");
+  }
+  deepStrictEqual(
+    concurrentVueDiagnosticsResponse.structuredContent?.result?.document,
+    vueDiagnosticsResponse.structuredContent?.result?.document,
+    "Concurrent Vue diagnostics did not use the same document snapshot",
+  );
+  deepStrictEqual(
+    concurrentVueDiagnosticsResponse.structuredContent?.result?.evidence,
+    vueDiagnosticsResponse.structuredContent?.result?.evidence,
+    "Concurrent Vue diagnostics disagreed about snapshot evidence",
+  );
+  if (vueDiagnosticsResponse.structuredContent?.result?.evidence?.status !== EVIDENCE_STATUS.VERIFIED) {
+    throw new Error("Vue diagnostic pull did not verify the current document snapshot");
+  }
+  if (
+    vueDiagnosticsResponse.structuredContent?.result?.evidence?.reason !== DIAGNOSTIC_EVIDENCE_REASON.CURRENT_DOCUMENT_SNAPSHOT_CONFIRMED
+  ) {
+    throw new Error("Vue diagnostic pull omitted its snapshot-confirmation reason");
   }
   const definition = await client.callTool({
     name: TOOL.DEFINITION,
@@ -213,6 +246,8 @@ try {
         vueTemplateComponentDefinition: "ok",
         vueNamedDefinitionSelection: "ok",
         vueFileHintBindingResolution: "ok",
+        vueSharedDiagnosticAcquisition: "ok",
+        vueDiagnosticPull: "ok",
         yamlRepresentation: "ok",
       },
       null,

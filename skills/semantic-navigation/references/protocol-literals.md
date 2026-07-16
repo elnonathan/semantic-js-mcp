@@ -28,7 +28,7 @@ Result schema version: `6`
 - `lsp_workspace_symbols`: `Returns declaration-shaped symbols whose names contain a query. Use lsp_count_named_symbol or lsp_audit_named_symbol with an exact name.`
 - `lsp_definition`: `Resolves definitions for one source position. Use lsp_hover for type information or lsp_count_references for impact scope.`
 - `lsp_hover`: `Returns inferred type information and documentation for one source position. Use lsp_definition for declaration identity.`
-- `lsp_diagnostics`: `Returns versioned diagnostics for one file and marks evidence untrusted when the language server does not confirm the current document.`
+- `lsp_diagnostics`: `Returns diagnostics for one file and marks evidence untrusted when the current document snapshot cannot be confirmed.`
 - `lsp_count_text_matches`: `Counts exact identifier text matches without semantic verification. Use lsp_count_named_symbol or lsp_audit_named_symbol to verify identity.`
 - `lsp_count_named_symbol`: `Returns exact-definition and verified-reference counts for a symbol name. Use lsp_audit_named_symbol for identity, signature, or file-hint binding verification and lsp_reference_page with a returned referenceSetId for locations.`
 - `lsp_count_references`: `Returns verified-reference counts for the symbol at one source position. Use lsp_audit_symbol for identity and signature or lsp_reference_page with the returned referenceSetId for locations.`
@@ -118,6 +118,12 @@ Result schema version: `6`
 - `unlimited`
 - `maximum`
 
+## LSP Methods
+
+- `textDocument/diagnostic`
+- `textDocument/publishDiagnostics`
+- `workspace/diagnostic/refresh`
+
 ## Accounting Status
 
 - `complete`
@@ -143,6 +149,7 @@ Result schema version: `6`
 ## Diagnostic Freshness
 
 - `current-document-version`
+- `different-document-content`
 - `version-not-reported-by-language-server`
 - `different-document-version`
 - `not-reported-for-current-document`
@@ -158,6 +165,8 @@ Result schema version: `6`
 ## Diagnostic Evidence Reason
 
 - `current-document-version-confirmed`
+- `current-document-snapshot-confirmed`
+- `document-content-changed-during-diagnostic-acquisition`
 - `language-server-version-not-reported`
 - `language-server-reported-different-version`
 - `language-server-did-not-report-current-document`

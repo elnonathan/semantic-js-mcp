@@ -37,6 +37,16 @@ Narrow tools provide one focused fact with a small response. Composed audits reu
 
 Composed tools do not remove access to narrow tools and do not weaken collection accounting.
 
+## Diagnostics Require Current Snapshot Evidence
+
+The server uses advertised diagnostic-pull capability when available and push
+notifications otherwise. Concurrent requests for the same document snapshot
+share one acquisition. A version match or completed pull request is not enough
+when the file content changes before the result is returned.
+
+Diagnostics that cannot be correlated to the current document remain
+explicitly untrusted.
+
 ## Preserve Provider-Native Embedded Evidence
 
 The JavaScript ecosystem includes mixed-language documents. When the owning provider reports diagnostics for a Vue template or embedded CSS, SCSS, or Less block, semantic-js-mcp preserves that evidence instead of filtering it according to another provider's domain.
