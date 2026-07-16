@@ -2,6 +2,7 @@
 
 import {readFile} from "node:fs/promises";
 import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
+import {isNamedSymbolTool, namedSemanticEvidenceMatches} from "../lib/semantic-evidence.mjs";
 import {
   CI_EXIT_CODE,
   CI_REASON,
@@ -12,6 +13,7 @@ import {
   PRESENTATION_MODE,
   PRODUCT,
   RESULT_SCHEMA,
+  SEMANTIC_EVIDENCE_STATUS,
   TOOL,
   TOOL_ORDER,
 } from "../protocol.mjs";
@@ -27,8 +29,11 @@ function isObject(value) {
 }
 
 function isCanonicalResult(result) {
+  const hasError = isObject(result?.error);
   const continuationsAreCanonical =
     Array.isArray(result?.continueWith) && result.continueWith.every((continuation) => PUBLIC_TOOL_NAMES.has(continuation));
+  const namedSemanticEvidenceIsCanonical =
+    !isNamedSymbolTool(result?.tool) || hasError || namedSemanticEvidenceMatches(result?.result, result?.collection?.status);
   return (
     result?.producer?.name === PRODUCT.NAME &&
     typeof result.producer.version === "string" &&
@@ -41,7 +46,9 @@ function isCanonicalResult(result) {
     isObject(result.presentation) &&
     PRESENTATION_MODES.has(result.presentation.mode) &&
     continuationsAreCanonical &&
-    COLLECTION_STATUSES.has(result.collection.status)
+    COLLECTION_STATUSES.has(result.collection.status) &&
+    (result.error === undefined || hasError) &&
+    namedSemanticEvidenceIsCanonical
   );
 }
 
@@ -77,6 +84,9 @@ function evaluate(data) {
   const source = {tool: result.tool, collectionStatus: result.collection.status};
   if (result.collection.status === COLLECTION_STATUS.FAILED || result.error) {
     return {...decision(CI_STATUS.BLOCKED, CI_REASON.TOOL_EXECUTION_FAILED), source};
+  }
+  if (isNamedSymbolTool(result.tool) && result.result.semanticEvidence.status === SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED) {
+    return {...decision(CI_STATUS.UNTRUSTED, CI_REASON.SEMANTIC_FOLLOW_UP_REQUIRED), source};
   }
   if (
     result.tool === TOOL.DIAGNOSTICS &&

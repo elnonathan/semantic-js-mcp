@@ -18,6 +18,8 @@ import {
   DIAGNOSTIC_PROVIDER,
   DIAGNOSTIC_REGION,
   EVIDENCE_STATUS,
+  SEMANTIC_EVIDENCE_FOLLOW_UP_REASON,
+  SEMANTIC_EVIDENCE_STATUS,
   TOOL,
 } from "../protocol.mjs";
 
@@ -257,6 +259,16 @@ try {
   if (ambiguousCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.MULTIPLE) {
     throw new Error("Vue named count did not report multiple selected definitions");
   }
+  if (ambiguousCount.structuredContent?.result?.semanticEvidence?.status !== SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED) {
+    throw new Error("Ambiguous Vue named count did not require semantic follow-up");
+  }
+  if (
+    !ambiguousCount.structuredContent?.result?.semanticEvidence?.followUpReasons?.includes(
+      SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.MULTIPLE_DEFINITIONS_SELECTED,
+    )
+  ) {
+    throw new Error("Ambiguous Vue named count omitted its semantic follow-up reason");
+  }
   if (!ambiguousCount.structuredContent?.continueWith?.includes(TOOL.AUDIT_SYMBOL)) {
     throw new Error("Ambiguous Vue named count did not recommend position-based audit");
   }
@@ -272,6 +284,9 @@ try {
   if (filteredCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.ONE) {
     throw new Error("Vue file hint did not select one exact definition");
   }
+  if (filteredCount.structuredContent?.result?.semanticEvidence?.status !== SEMANTIC_EVIDENCE_STATUS.USABLE) {
+    throw new Error("Complete filtered Vue named count was not marked usable as requested");
+  }
   if (!filteredCount.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
     throw new Error("Filtered Vue named count omitted its reusable reference set");
   }
@@ -283,6 +298,13 @@ try {
   if (filenameOnlyCount.isError) throw new Error(filenameOnlyCount.content?.[0]?.text || "Vue component-name count failed");
   if (filenameOnlyCount.structuredContent?.result?.definitionSelectionStatus !== DEFINITION_SELECTION_STATUS.NONE) {
     throw new Error("Vue filename was incorrectly treated as an exact named declaration");
+  }
+  if (
+    !filenameOnlyCount.structuredContent?.result?.semanticEvidence?.followUpReasons?.includes(
+      SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.NO_DEFINITION_SELECTED,
+    )
+  ) {
+    throw new Error("Vue component-name count omitted its semantic follow-up reason");
   }
   if (filenameOnlyCount.structuredContent?.continueWith?.includes(TOOL.REFERENCE_PAGE)) {
     throw new Error("Vue named count recommended a reference page without a reusable reference set");
@@ -356,6 +378,13 @@ try {
   if (limitedBindingAudit.isError) throw new Error(limitedBindingAudit.content?.[0]?.text || "Vue limited binding audit failed");
   if (limitedBindingAudit.structuredContent?.collection?.status !== COLLECTION_STATUS.LIMITED) {
     throw new Error("Vue limited binding audit did not report limited collection");
+  }
+  if (
+    !limitedBindingAudit.structuredContent?.result?.semanticEvidence?.followUpReasons?.includes(
+      SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.COLLECTION_LIMITED,
+    )
+  ) {
+    throw new Error("Vue limited binding audit omitted its collection follow-up reason");
   }
   if (limitedBindingAudit.structuredContent?.result?.fileHintResolution?.accountingStatus !== ACCOUNTING_STATUS.INCOMPLETE) {
     throw new Error("Vue limited binding audit claimed complete text-match accounting");

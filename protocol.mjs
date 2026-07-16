@@ -207,9 +207,9 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.DIAGNOSTICS]:
     "Returns diagnostics for one file and marks evidence untrusted when the current document snapshot cannot be confirmed.",
   [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
-  [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts plus explicit semantic follow-up status for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
-  [TOOL.AUDIT_NAMED_SYMBOL]: `Returns a compact exact-name audit and verifies source bindings to fileHint when no declaration is selected. Use ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.AUDIT_NAMED_SYMBOL]: `Returns a compact exact-name audit with explicit semantic follow-up status and verifies source bindings to fileHint when no declaration is selected. Use ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.AUDIT_SYMBOL]: `Returns a compact definition, signature, coverage, and freshness summary for one source position. Use ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
   [TOOL.REFERENCES]: `Returns the first page of verified source locations and detailed collection evidence. Use ${TOOL.REFERENCE_PAGE} for later pages.`,
   [TOOL.REFERENCE_PAGE]: `Returns a page from a freshness-checked reference set created by a count, audit, or ${TOOL.REFERENCES} call.`,
@@ -242,6 +242,18 @@ export const DEFINITION_SELECTION_STATUS = Object.freeze({
   NONE: "no-definition-selected",
   ONE: "one-definition-selected",
   MULTIPLE: "multiple-definitions-selected",
+});
+
+export const SEMANTIC_EVIDENCE_STATUS = Object.freeze({
+  USABLE: "usable-as-requested",
+  FOLLOW_UP_REQUIRED: "follow-up-required",
+});
+
+export const SEMANTIC_EVIDENCE_FOLLOW_UP_REASON = Object.freeze({
+  COLLECTION_LIMITED: "collection-is-limited",
+  COLLECTION_PARTIAL: "collection-is-partial",
+  NO_DEFINITION_SELECTED: DEFINITION_SELECTION_STATUS.NONE,
+  MULTIPLE_DEFINITIONS_SELECTED: DEFINITION_SELECTION_STATUS.MULTIPLE,
 });
 
 export const SIGNATURE_SOURCE = Object.freeze({
@@ -369,6 +381,7 @@ export const CI_REASON = Object.freeze({
   VERIFIED_DIAGNOSTIC_ERRORS: "verified-current-document-has-error-diagnostics",
   INCOMPLETE_EVIDENCE: "collection-is-limited-or-partial",
   UNTRUSTED_DIAGNOSTICS: "diagnostics-for-current-document-are-untrusted",
+  SEMANTIC_FOLLOW_UP_REQUIRED: "semantic-evidence-requires-follow-up",
   TOOL_EXECUTION_FAILED: "tool-execution-failed",
   INVALID_INPUT: "input-is-not-a-semantic-js-mcp-result",
 });
@@ -383,10 +396,10 @@ export const INTERNAL_RESOLUTION_SOURCE = Object.freeze({
 
 export const RESULT_SCHEMA = Object.freeze({
   NAME: PRODUCT.NAME,
-  VERSION: 6,
+  VERSION: 7,
 });
 
-export const SERVER_VERSION = "0.9.0";
+export const SERVER_VERSION = "0.10.0";
 
 export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
   TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server/lib/cli.mjs",

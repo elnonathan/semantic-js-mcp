@@ -28,6 +28,8 @@ import {
   PRODUCT,
   REFERENCE_SET_CHANGE_TYPE,
   RESULT_SCHEMA,
+  SEMANTIC_EVIDENCE_FOLLOW_UP_REASON,
+  SEMANTIC_EVIDENCE_STATUS,
   SERVER_VERSION,
   SIGNATURE_SOURCE,
   TOOL,
@@ -388,6 +390,14 @@ try {
   assert(count.request.candidateLimit.mode === "unlimited", "Omitted candidate limit was not represented as unlimited");
   assert(count.result.definitions.length === 1, "fileHint did not select one homonymous definition");
   assert(count.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.ONE, "Named count did not report one selected definition");
+  assert(
+    count.result.semanticEvidence.status === SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+    "Partial named count did not require semantic follow-up",
+  );
+  assert(
+    count.result.semanticEvidence.followUpReasons.includes(SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.COLLECTION_PARTIAL),
+    "Partial named count omitted its semantic follow-up reason",
+  );
   const countedDefinition = count.result.definitions[0];
   assert(count.continueWith.includes(TOOL.REFERENCE_PAGE), "Named count did not expose its reusable reference set");
   assert(!count.continueWith.includes(TOOL.REFERENCES), "Named count recommended recollecting an existing reference set");
@@ -419,6 +429,10 @@ try {
   assert(
     missingNamedCount.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.NONE,
     "Missing named count did not report an empty definition selection",
+  );
+  assert(
+    missingNamedCount.result.semanticEvidence.followUpReasons.includes(SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.NO_DEFINITION_SELECTED),
+    "Missing named count omitted its semantic disambiguation reason",
   );
   assert(
     missingNamedCount.continueWith.includes(TOOL.WORKSPACE_SYMBOLS),
@@ -463,6 +477,10 @@ try {
   );
   assert(audit.result.audits[0].collection.reusedPreviousCollection === true, "Audit did not reuse the compatible count collection");
   assert(audit.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.ONE, "Named audit did not report one selected definition");
+  assert(
+    audit.result.semanticEvidence.status === SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+    "Partial named audit did not require semantic follow-up",
+  );
   assert(audit.continueWith.includes(TOOL.REFERENCE_PAGE), "Named audit did not expose its reusable reference set");
   assert(!audit.continueWith.includes(TOOL.REFERENCES), "Named audit recommended recollecting an existing reference set");
   assert(

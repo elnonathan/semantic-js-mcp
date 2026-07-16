@@ -11,6 +11,7 @@ import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
+import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -2199,6 +2200,7 @@ function toolResult(tool, body) {
 }
 
 function validatePublicResult(data) {
+  const hasError = isObject(data.error);
   if (
     data.producer?.name !== PRODUCT.NAME ||
     data.producer?.version !== SERVER_VERSION ||
@@ -2218,6 +2220,12 @@ function validatePublicResult(data) {
   }
   if (!PRESENTATION_MODES.has(data.presentation.mode)) {
     throw new Error(`${data.tool} returned an invalid presentation mode`);
+  }
+  if (data.error !== undefined && !hasError) {
+    throw new Error(`${data.tool} returned an invalid error object`);
+  }
+  if (isNamedSymbolTool(data.tool) && !hasError && !namedSemanticEvidenceMatches(data.result, data.collection.status)) {
+    throw new Error(`${data.tool} returned semantic evidence that conflicts with collection or definition selection`);
   }
   for (const continuation of data.continueWith || []) {
     if (!PUBLIC_TOOL_NAMES.has(continuation)) {
@@ -2604,6 +2612,7 @@ server.registerTool(
     const tool = TOOL.COUNT_NAMED_SYMBOL;
     try {
       const operation = await collectNamedSymbolAudits(args);
+      const selectionStatus = definitionSelectionStatus(operation.matchingDefinitions);
       return toolResult(tool, {
         request: {
           root: operation.resolvedRoot,
@@ -2618,7 +2627,8 @@ server.registerTool(
           requestedSymbol: args.symbol,
           exactDefinitionsFound: operation.exactDefinitions.length,
           definitionsMatchingFileFilter: operation.matchingDefinitions.length,
-          definitionSelectionStatus: definitionSelectionStatus(operation.matchingDefinitions),
+          definitionSelectionStatus: selectionStatus,
+          semanticEvidence: namedSemanticEvidence(selectionStatus, operation.collection.status),
           definitions: operation.audits.map((audit, index) => countSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
@@ -2704,6 +2714,7 @@ server.registerTool(
     const tool = TOOL.AUDIT_NAMED_SYMBOL;
     try {
       const operation = await collectNamedSymbolAudits(args, {includeFileHintResolution: true});
+      const selectionStatus = definitionSelectionStatus(operation.matchingDefinitions);
       return toolResult(tool, {
         request: {
           root: operation.resolvedRoot,
@@ -2718,7 +2729,8 @@ server.registerTool(
           requestedSymbol: args.symbol,
           exactDefinitionsFound: operation.exactDefinitions.length,
           definitionsMatchingFileFilter: operation.matchingDefinitions.length,
-          definitionSelectionStatus: definitionSelectionStatus(operation.matchingDefinitions),
+          definitionSelectionStatus: selectionStatus,
+          semanticEvidence: namedSemanticEvidence(selectionStatus, operation.collection.status),
           fileHintResolution: operation.fileHintResolution,
           audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index])),
         },

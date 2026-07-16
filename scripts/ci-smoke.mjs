@@ -8,13 +8,17 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {
   CI_EXIT_CODE,
+  CI_REASON,
   CI_STATUS,
   COLLECTION_STATUS,
+  DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_SEVERITY,
   EVIDENCE_STATUS,
   PRESENTATION_MODE,
   PRODUCT,
   RESULT_SCHEMA,
+  SEMANTIC_EVIDENCE_FOLLOW_UP_REASON,
+  SEMANTIC_EVIDENCE_STATUS,
   SERVER_VERSION,
   TOOL,
 } from "../protocol.mjs";
@@ -39,7 +43,7 @@ function runEvaluator(inputFile) {
   });
 }
 
-async function evaluate(name, input, expectedStatus, expectedExitCode) {
+async function evaluate(name, input, expectedStatus, expectedExitCode, expectedReason) {
   const file = path.join(workspace, `${name}.json`);
   await writeFile(file, JSON.stringify(input));
   const execution = await runEvaluator(file);
@@ -47,6 +51,7 @@ async function evaluate(name, input, expectedStatus, expectedExitCode) {
   strictEqual(execution.code, expectedExitCode, `${name} returned the wrong process exit code`);
   const result = JSON.parse(execution.stdout);
   deepStrictEqual({status: result.status, exitCode: result.exitCode}, {status: expectedStatus, exitCode: expectedExitCode});
+  if (expectedReason) strictEqual(result.reason, expectedReason, `${name} returned the wrong reason`);
 }
 
 function canonicalResult(tool, collectionStatus, result, extra = {}) {
@@ -64,6 +69,44 @@ function canonicalResult(tool, collectionStatus, result, extra = {}) {
 
 try {
   await evaluate("pass", canonicalResult(TOOL.COUNT_REFERENCES, COLLECTION_STATUS.COMPLETE, {}), CI_STATUS.PASS, CI_EXIT_CODE.PASS);
+  await evaluate(
+    "named-semantic-evidence-usable",
+    canonicalResult(TOOL.COUNT_NAMED_SYMBOL, COLLECTION_STATUS.COMPLETE, {
+      definitionSelectionStatus: DEFINITION_SELECTION_STATUS.ONE,
+      semanticEvidence: {status: SEMANTIC_EVIDENCE_STATUS.USABLE, followUpReasons: []},
+    }),
+    CI_STATUS.PASS,
+    CI_EXIT_CODE.PASS,
+  );
+  await evaluate(
+    "named-semantic-follow-up-required",
+    canonicalResult(TOOL.AUDIT_NAMED_SYMBOL, COLLECTION_STATUS.COMPLETE, {
+      definitionSelectionStatus: DEFINITION_SELECTION_STATUS.MULTIPLE,
+      semanticEvidence: {
+        status: SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+        followUpReasons: [SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.MULTIPLE_DEFINITIONS_SELECTED],
+      },
+    }),
+    CI_STATUS.UNTRUSTED,
+    CI_EXIT_CODE.UNTRUSTED,
+  );
+  await evaluate(
+    "named-semantic-evidence-conflicts-with-source-fields",
+    canonicalResult(TOOL.COUNT_NAMED_SYMBOL, COLLECTION_STATUS.PARTIAL, {
+      definitionSelectionStatus: DEFINITION_SELECTION_STATUS.ONE,
+      semanticEvidence: {status: SEMANTIC_EVIDENCE_STATUS.USABLE, followUpReasons: []},
+    }),
+    CI_STATUS.BLOCKED,
+    CI_EXIT_CODE.BLOCKED,
+  );
+  await evaluate(
+    "named-semantic-evidence-requires-definition-selection",
+    canonicalResult(TOOL.COUNT_NAMED_SYMBOL, COLLECTION_STATUS.COMPLETE, {
+      semanticEvidence: {status: SEMANTIC_EVIDENCE_STATUS.USABLE, followUpReasons: []},
+    }),
+    CI_STATUS.BLOCKED,
+    CI_EXIT_CODE.BLOCKED,
+  );
   await evaluate(
     "fail",
     canonicalResult(TOOL.DIAGNOSTICS, COLLECTION_STATUS.COMPLETE, {
@@ -93,6 +136,20 @@ try {
     canonicalResult(TOOL.REFERENCES, COLLECTION_STATUS.FAILED, {}, {error: {code: "fixture"}}),
     CI_STATUS.BLOCKED,
     CI_EXIT_CODE.BLOCKED,
+  );
+  await evaluate(
+    "named-tool-execution-failed",
+    canonicalResult(TOOL.COUNT_NAMED_SYMBOL, COLLECTION_STATUS.FAILED, {}, {error: {code: "fixture"}}),
+    CI_STATUS.BLOCKED,
+    CI_EXIT_CODE.BLOCKED,
+    CI_REASON.TOOL_EXECUTION_FAILED,
+  );
+  await evaluate(
+    "named-tool-invalid-error-shape",
+    canonicalResult(TOOL.COUNT_NAMED_SYMBOL, COLLECTION_STATUS.FAILED, {}, {error: "fixture"}),
+    CI_STATUS.BLOCKED,
+    CI_EXIT_CODE.BLOCKED,
+    CI_REASON.INVALID_INPUT,
   );
   await evaluate(
     "missing-canonical-identity",

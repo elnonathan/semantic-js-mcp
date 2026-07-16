@@ -4,6 +4,17 @@ Semantic JS MCP increments `producer.resultSchemaVersion` when a tool-result
 shape changes incompatibly. Consumers should validate this value before parsing
 tool-specific evidence.
 
+## Schema 7
+
+Schema 7 adds `result.semanticEvidence` to named counts and audits. Its
+`status` is `usable-as-requested` only when collection is complete and exactly
+one definition is selected. Otherwise `follow-up-required` includes every
+applicable collection or definition-selection reason under `followUpReasons`.
+
+Presentation mode, page size, and subset presentation never affect this
+status. It summarizes whether the requested semantic result needs another
+semantic step; it does not establish code correctness or runtime behavior.
+
 ## Schema 6
 
 Schema 6 replaces representational duplication with a compact response while

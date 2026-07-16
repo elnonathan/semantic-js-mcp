@@ -152,6 +152,8 @@ Reference pages group the locations returned in that page under `referenceGroups
 
 Named counts and audits report `definitionSelectionStatus` as `no-definition-selected`, `one-definition-selected`, or `multiple-definitions-selected`. This status describes exact declarations remaining after `fileHint` filtering, before any `maxDefinitions` analysis limit. When selection is empty or ambiguous, `continueWith` recommends structural or position-based tools. It recommends `lsp_reference_page` only when the response contains a reusable reference set.
 
+They also report `semanticEvidence.status` as `usable-as-requested` or `follow-up-required`. Follow-up reasons combine incomplete collection and ambiguous definition selection without treating a compact, paged, or subset presentation as incomplete evidence. This status evaluates only the requested semantic result; it does not declare the code correct.
+
 When `fileHint` selects no declaration, a named audit can verify whether source bindings resolve to the hinted file while keeping declaration identity and uncertainty explicit.
 
 ### Limits

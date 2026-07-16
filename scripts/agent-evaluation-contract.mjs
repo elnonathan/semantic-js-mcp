@@ -1,4 +1,13 @@
-import {ACCOUNTING_STATUS, CI_EXIT_CODE, CI_STATUS, COLLECTION_STATUS, DEFINITION_SELECTION_STATUS, TOOL} from "../protocol.mjs";
+import {
+  ACCOUNTING_STATUS,
+  CI_EXIT_CODE,
+  CI_STATUS,
+  COLLECTION_STATUS,
+  DEFINITION_SELECTION_STATUS,
+  SEMANTIC_EVIDENCE_FOLLOW_UP_REASON,
+  SEMANTIC_EVIDENCE_STATUS,
+  TOOL,
+} from "../protocol.mjs";
 
 export const AGENT_EVALUATION_ARGUMENT = Object.freeze({
   ANSWERS: "--answers",
@@ -25,6 +34,7 @@ export const AGENT_EVALUATION_CASES = Object.freeze([
         requestedSymbol: "calculateTotal",
         exactDefinitionsFound: 1,
         definitionSelectionStatus: DEFINITION_SELECTION_STATUS.ONE,
+        semanticEvidence: Object.freeze({status: SEMANTIC_EVIDENCE_STATUS.USABLE, followUpReasons: Object.freeze([])}),
         references: Object.freeze({verifiedTotal: 18}),
         unresolvedReferences: Object.freeze({count: 0}),
       }),
@@ -41,6 +51,11 @@ export const AGENT_EVALUATION_CASES = Object.freeze([
       result: Object.freeze({
         requestedSymbol: "RequestHandler",
         exactDefinitionsFound: 1,
+        definitionSelectionStatus: DEFINITION_SELECTION_STATUS.ONE,
+        semanticEvidence: Object.freeze({
+          status: SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+          followUpReasons: Object.freeze([SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.COLLECTION_PARTIAL]),
+        }),
         references: Object.freeze({verifiedTotal: 52}),
         unresolvedReferences: Object.freeze({count: 1}),
       }),
@@ -58,6 +73,10 @@ export const AGENT_EVALUATION_CASES = Object.freeze([
         requestedSymbol: "createClient",
         exactDefinitionsFound: 3,
         definitionSelectionStatus: DEFINITION_SELECTION_STATUS.MULTIPLE,
+        semanticEvidence: Object.freeze({
+          status: SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+          followUpReasons: Object.freeze([SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.MULTIPLE_DEFINITIONS_SELECTED]),
+        }),
         unresolvedReferences: Object.freeze({count: 0}),
       }),
       collection: Object.freeze({status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false}),
@@ -74,6 +93,10 @@ export const AGENT_EVALUATION_CASES = Object.freeze([
         requestedSymbol: "RenamedPanel",
         exactDefinitionsFound: 0,
         definitionSelectionStatus: DEFINITION_SELECTION_STATUS.NONE,
+        semanticEvidence: Object.freeze({
+          status: SEMANTIC_EVIDENCE_STATUS.FOLLOW_UP_REQUIRED,
+          followUpReasons: Object.freeze([SEMANTIC_EVIDENCE_FOLLOW_UP_REASON.NO_DEFINITION_SELECTED]),
+        }),
         fileHintResolution: Object.freeze({
           textMatchesFound: 2,
           textMatchesChecked: 2,
