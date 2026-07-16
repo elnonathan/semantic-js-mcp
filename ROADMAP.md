@@ -23,7 +23,7 @@ Semantic JS MCP is under active development. This roadmap outlines areas of inve
 ## Agent-Facing Results
 
 - Keep result vocabulary literal, finite, and versioned.
-- Improve compact presentation without hiding collection scope or unresolved evidence.
+- Measure compact audit summaries against large real-world symbols and smaller models without hiding collection scope or unresolved evidence.
 - Expand examples for combining count, audit, reference, diagnostic, text-search, source-inspection, and test evidence.
 
 ## Distribution

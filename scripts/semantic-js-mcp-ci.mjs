@@ -28,14 +28,12 @@ function isObject(value) {
 
 function isCanonicalResult(result) {
   const continuationsAreCanonical =
-    Array.isArray(result?.continueWith) &&
-    result.continueWith.every((continuation) => isObject(continuation) && PUBLIC_TOOL_NAMES.has(continuation.tool));
+    Array.isArray(result?.continueWith) && result.continueWith.every((continuation) => PUBLIC_TOOL_NAMES.has(continuation));
   return (
-    result?.server?.name === PRODUCT.NAME &&
-    typeof result.server.version === "string" &&
-    result.server.version.length > 0 &&
-    result?.resultSchema?.name === RESULT_SCHEMA.NAME &&
-    result.resultSchema.version === RESULT_SCHEMA.VERSION &&
+    result?.producer?.name === PRODUCT.NAME &&
+    typeof result.producer.version === "string" &&
+    result.producer.version.length > 0 &&
+    result.producer.resultSchemaVersion === RESULT_SCHEMA.VERSION &&
     PUBLIC_TOOL_NAMES.has(result.tool) &&
     isObject(result.request) &&
     isObject(result.result) &&

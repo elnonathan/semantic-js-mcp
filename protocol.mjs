@@ -151,8 +151,26 @@ export const PRESENTATION_MODE = Object.freeze({
   ALL_ITEMS: "all-items",
   SUBSET: "subset",
   COUNT_ONLY: "count-only",
-  SUMMARY_BY_FILE: "summary-by-file",
+  COMPACT_SUMMARY: "compact-summary",
   PAGE: "page",
+});
+
+export const TOOL_DESCRIPTION = Object.freeze({
+  [TOOL.DOCUMENT_SYMBOLS]: `Returns declarations and nested members for one file. Use ${TOOL.DEFINITION} or ${TOOL.AUDIT_SYMBOL} with an exact position for semantic identity.`,
+  [TOOL.WORKSPACE_SYMBOLS]: `Returns declaration-shaped symbols whose names contain a query. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} with an exact name.`,
+  [TOOL.DEFINITION]: `Resolves definitions for one source position. Use ${TOOL.HOVER} for type information or ${TOOL.COUNT_REFERENCES} for impact scope.`,
+  [TOOL.HOVER]: `Returns inferred type information and documentation for one source position. Use ${TOOL.DEFINITION} for declaration identity.`,
+  [TOOL.DIAGNOSTICS]:
+    "Returns versioned diagnostics for one file and marks evidence untrusted when the language server does not confirm the current document.",
+  [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
+  [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
+  [TOOL.AUDIT_NAMED_SYMBOL]: `Returns a compact definition, signature, coverage, and freshness summary for an exact symbol name. Use ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
+  [TOOL.AUDIT_SYMBOL]: `Returns a compact definition, signature, coverage, and freshness summary for one source position. Use ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
+  [TOOL.REFERENCES]: `Returns the first page of verified source locations and detailed collection evidence. Use ${TOOL.REFERENCE_PAGE} for later pages.`,
+  [TOOL.REFERENCE_PAGE]: `Returns a page from a freshness-checked reference set created by a count, audit, or ${TOOL.REFERENCES} call.`,
+  [TOOL.UNRESOLVED_REFERENCE_PAGE]:
+    "Returns freshness-checked text-match candidates whose definitions could not be resolved, including literal failure reasons.",
 });
 
 export const LIMIT_MODE = Object.freeze({
@@ -230,6 +248,10 @@ export const FINGERPRINT_ALGORITHM = Object.freeze({
   SHA_256: "sha256",
 });
 
+export const FINGERPRINT_FORMAT = Object.freeze({
+  SHA_256_PREFIX: `${FINGERPRINT_ALGORITHM.SHA_256}:`,
+});
+
 export const REFERENCE_DISCOVERY_METHOD = Object.freeze({
   OWNING_WORKSPACE_LANGUAGE_SERVER: "owning-workspace-language-server",
   DEFINITION_MATCH_FROM_ANOTHER_WORKSPACE: "definition-match-from-another-workspace",
@@ -302,7 +324,7 @@ export const INTERNAL_RESOLUTION_SOURCE = Object.freeze({
 
 export const RESULT_SCHEMA = Object.freeze({
   NAME: PRODUCT.NAME,
-  VERSION: 5,
+  VERSION: 6,
 });
 
 export const SERVER_VERSION = "0.8.1";

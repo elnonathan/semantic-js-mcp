@@ -26,6 +26,7 @@ import {
   ERROR_CODE,
   EVIDENCE_TYPE,
   FINGERPRINT_ALGORITHM,
+  FINGERPRINT_FORMAT,
   FORBIDDEN_PUBLIC_FIELD,
   LANGUAGE_ID,
   LIMIT_MODE,
@@ -42,6 +43,7 @@ import {
   SERVER_VERSION,
   SIGNATURE_SOURCE,
   TOOL,
+  TOOL_DESCRIPTION,
   TOOL_ORDER,
   TYPESCRIPT_PROJECT_KIND,
   WORKSPACE_CONFIGURATION_FILE_NAMES,
@@ -1246,6 +1248,10 @@ function contentFingerprint(file) {
   });
 }
 
+function publicContentFingerprint(fingerprint) {
+  return `${FINGERPRINT_FORMAT.SHA_256_PREFIX}${fingerprint}`;
+}
+
 async function fingerprintFiles(files) {
   const uniqueFiles = [...new Set(files)].sort();
   const fingerprints = await mapLimit(uniqueFiles, DEFAULT.FILE_FINGERPRINT_CONCURRENCY, async (file) => ({
@@ -1493,22 +1499,21 @@ async function getReferenceSetById(id) {
 
 function presentReferenceSet(entry, offset, pageSize) {
   const start = Math.max(0, offset);
-  const references = entry.analysis.references.slice(start, start + pageSize).map((reference) => ({
-    file: reference.file,
-    range: reference.range,
-    discoveryMethod: publicReferenceMethod(reference.via),
-  }));
+  const references = entry.analysis.references.slice(start, start + pageSize);
+  const referenceGroupsByFile = new Map();
+  for (const reference of references) {
+    const group = referenceGroupsByFile.get(reference.file) || {file: reference.file, locations: []};
+    group.locations.push({range: reference.range, discoveryMethod: publicReferenceMethod(reference.via)});
+    referenceGroupsByFile.set(reference.file, group);
+  }
   const nextOffset = start + references.length;
   return {
-    references,
+    referenceGroups: [...referenceGroupsByFile.values()],
     presentation: {
       mode: PRESENTATION_MODE.PAGE,
       locationsAvailable: entry.analysis.references.length,
       locationsReturned: references.length,
-      offset: start,
-      pageSize,
       nextCursor: nextOffset < entry.analysis.references.length ? String(nextOffset) : undefined,
-      locationsReturnedAreSubset: nextOffset < entry.analysis.references.length || start > 0,
     },
   };
 }
@@ -1523,10 +1528,7 @@ function presentUnresolvedReferenceSet(entry, offset, pageSize) {
       mode: PRESENTATION_MODE.PAGE,
       candidatesAvailable: entry.analysis.unresolvedCandidates.length,
       candidatesReturned: candidates.length,
-      offset: start,
-      pageSize,
       nextCursor: nextOffset < entry.analysis.unresolvedCandidates.length ? String(nextOffset) : undefined,
-      candidatesReturnedAreSubset: nextOffset < entry.analysis.unresolvedCandidates.length || start > 0,
     },
   };
 }
@@ -1729,7 +1731,6 @@ function referenceFacts(audit) {
     },
     unresolvedReferences: {
       candidatesAvailable: summary.unresolvedCandidates.length,
-      referenceSetId: audit.referenceSetId,
       pageWithTool: summary.unresolvedCandidates.length > 0 ? TOOL.UNRESOLVED_REFERENCE_PAGE : undefined,
     },
     collection: {
@@ -1738,11 +1739,9 @@ function referenceFacts(audit) {
         unresolvedCount: summary.unresolvedCandidateCount,
       }),
       stoppedByLimit: summary.collectionTruncated,
-      referenceSetId: audit.referenceSetId,
       reusedPreviousCollection: audit.referenceSetReused,
       expiresInSeconds: Math.ceil(REFERENCE_SET_TTL_MS / DEFAULT.MILLISECONDS_PER_SECOND),
       contentFreshness: CONTENT_FRESHNESS.VERIFIED_CURRENT,
-      contentFingerprintAlgorithm: FINGERPRINT_ALGORITHM.SHA_256,
       contentFilesChecked: audit.referenceSetContentFilesChecked,
       contentCheckedAt: new Date(audit.referenceSetFreshnessCheckedAt).toISOString(),
       repositoryInventoryFreshness: CONTENT_FRESHNESS.VERIFIED_REPOSITORY_SOURCE_INVENTORY,
@@ -1819,9 +1818,19 @@ function auditSummary(audit, symbol, includeSignature = true) {
     references: facts.references,
     textSearch: facts.textSearch,
     unresolvedReferences: facts.unresolvedReferences,
-    referenceFiles: facts.referenceFiles,
-    referenceSetId: facts.collection.referenceSetId,
-    collection: facts.collection,
+    filesContainingReferences: facts.referenceFiles.length,
+    referenceSetId: audit.referenceSetId,
+    collection: compactReferenceCollection(facts.collection),
+  };
+}
+
+function compactReferenceCollection(collection) {
+  return {
+    status: collection.status,
+    stoppedByLimit: collection.stoppedByLimit,
+    reusedPreviousCollection: collection.reusedPreviousCollection,
+    contentFreshness: collection.contentFreshness,
+    repositoryInventoryFreshness: collection.repositoryInventoryFreshness,
   };
 }
 
@@ -1835,8 +1844,8 @@ function countSummary(audit, symbol) {
     textSearch: facts.textSearch,
     unresolvedReferences: facts.unresolvedReferences,
     filesContainingReferences: facts.referenceFiles.length,
-    referenceSetId: facts.collection.referenceSetId,
-    collection: facts.collection,
+    referenceSetId: audit.referenceSetId,
+    collection: compactReferenceCollection(facts.collection),
   };
 }
 
@@ -1882,8 +1891,7 @@ async function collectNamedSymbolAudits({root, symbol, fileHint, maxDefinitions,
 function toolResult(tool, body) {
   const data = JSON.parse(
     JSON.stringify({
-      server: {name: PRODUCT.NAME, version: SERVER_VERSION},
-      resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION},
+      producer: {name: PRODUCT.NAME, version: SERVER_VERSION, resultSchemaVersion: RESULT_SCHEMA.VERSION},
       tool,
       ...body,
     }),
@@ -1897,11 +1905,12 @@ function toolResult(tool, body) {
 }
 
 function validatePublicResult(data) {
-  if (data.server?.name !== PRODUCT.NAME || data.server?.version !== SERVER_VERSION) {
-    throw new Error(`Tool result omitted the ${PRODUCT.NAME} server identity`);
-  }
-  if (data.resultSchema?.name !== RESULT_SCHEMA.NAME || data.resultSchema?.version !== RESULT_SCHEMA.VERSION) {
-    throw new Error(`Tool result omitted the ${RESULT_SCHEMA.NAME} result schema identity`);
+  if (
+    data.producer?.name !== PRODUCT.NAME ||
+    data.producer?.version !== SERVER_VERSION ||
+    data.producer?.resultSchemaVersion !== RESULT_SCHEMA.VERSION
+  ) {
+    throw new Error(`Tool result omitted the ${PRODUCT.NAME} producer identity`);
   }
   if (!PUBLIC_TOOL_NAMES.has(data.tool)) throw new Error(`Unknown public tool name: ${data.tool}`);
   if (!isObject(data.request) || !isObject(data.result)) {
@@ -1917,8 +1926,8 @@ function validatePublicResult(data) {
     throw new Error(`${data.tool} returned an invalid presentation mode`);
   }
   for (const continuation of data.continueWith || []) {
-    if (!PUBLIC_TOOL_NAMES.has(continuation.tool)) {
-      throw new Error(`${data.tool} returned an unknown continuation tool: ${continuation.tool}`);
+    if (!PUBLIC_TOOL_NAMES.has(continuation)) {
+      throw new Error(`${data.tool} returned an unknown continuation tool: ${continuation}`);
     }
   }
 
@@ -1953,8 +1962,7 @@ function validatePublicResult(data) {
 function toolError(tool, error) {
   const message = error instanceof Error ? error.message : String(error);
   const data = {
-    server: {name: PRODUCT.NAME, version: SERVER_VERSION},
-    resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION},
+    producer: {name: PRODUCT.NAME, version: SERVER_VERSION, resultSchemaVersion: RESULT_SCHEMA.VERSION},
     tool,
     request: {},
     result: {},
@@ -2002,26 +2010,12 @@ try {
   process.exit(PROCESS_EXIT_CODE.FAILURE);
 }
 
-const server = new McpServer(
-  {name: PRODUCT.NAME, version: SERVER_VERSION},
-  {
-    instructions: [
-      `Use ${PRODUCT.NAME} tools as a complementary graph.`,
-      "Use lsp_document_symbols or lsp_workspace_symbols for discovery.",
-      "Use lsp_definition or lsp_hover for one position-based fact.",
-      "Use lsp_count_named_symbol or lsp_count_references for a small response that measures reference scope.",
-      "Use lsp_audit_named_symbol or lsp_audit_symbol for a composed semantic evidence summary.",
-      "Use lsp_references and lsp_reference_page for verified source locations.",
-      "Tool results provide static semantic evidence. Use direct source inspection and focused tests for runtime behavior.",
-    ].join(" "),
-  },
-);
+const server = new McpServer({name: PRODUCT.NAME, version: SERVER_VERSION});
 
 server.registerTool(
   TOOL.DOCUMENT_SYMBOLS,
   {
-    description:
-      "Provides declarations and nested members reported for one file. Evidence scope: document structure. Continue with lsp_definition, lsp_hover, lsp_count_references, or lsp_audit_symbol using an exact position.",
+    description: TOOL_DESCRIPTION[TOOL.DOCUMENT_SYMBOLS],
     inputSchema: {
       ...fileSchema,
       maxResults: z.number().int().min(1).optional().describe("Optional number of symbols to return; omit to return all collected symbols"),
@@ -2045,10 +2039,7 @@ server.registerTool(
           itemsReturned: symbols.length,
           itemsReturnedAreSubset: symbols.length < all.length,
         },
-        continueWith: [
-          {tool: TOOL.DEFINITION, provides: "the exact definition for a source position"},
-          {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for a source position"},
-        ],
+        continueWith: [TOOL.DEFINITION, TOOL.AUDIT_SYMBOL],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2059,8 +2050,7 @@ server.registerTool(
 server.registerTool(
   TOOL.WORKSPACE_SYMBOLS,
   {
-    description:
-      "Provides declaration-shaped symbols whose names contain a query across a workspace or repository. Evidence scope: symbol discovery. Continue with lsp_definition, lsp_count_named_symbol, or lsp_audit_named_symbol using the exact symbol name.",
+    description: TOOL_DESCRIPTION[TOOL.WORKSPACE_SYMBOLS],
     inputSchema: {
       root: z.string().describe("Absolute workspace or repository root"),
       query: z.string().min(1).describe("Exact or partial symbol name"),
@@ -2099,10 +2089,7 @@ server.registerTool(
           itemsReturned: symbols.length,
           itemsReturnedAreSubset: symbols.length < all.length,
         },
-        continueWith: [
-          {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "definition and reference counts for an exact symbol name"},
-          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity and a reference summary by file"},
-        ],
+        continueWith: [TOOL.COUNT_NAMED_SYMBOL, TOOL.AUDIT_NAMED_SYMBOL],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2113,8 +2100,7 @@ server.registerTool(
 server.registerTool(
   TOOL.DEFINITION,
   {
-    description:
-      "Provides the exact definitions resolved for one source position. Evidence scope: symbol identity at that position. Continue with lsp_hover, lsp_count_references, or lsp_audit_symbol.",
+    description: TOOL_DESCRIPTION[TOOL.DEFINITION],
     inputSchema: {
       ...positionSchema,
       maxResults: z
@@ -2151,10 +2137,7 @@ server.registerTool(
           itemsReturned: definitions.length,
           itemsReturnedAreSubset: definitions.length < resolved.definitions.length,
         },
-        continueWith: [
-          {tool: TOOL.HOVER, provides: "the inferred type and documentation at the same position"},
-          {tool: TOOL.COUNT_REFERENCES, provides: "verified reference counts for the resolved symbol"},
-        ],
+        continueWith: [TOOL.HOVER, TOOL.COUNT_REFERENCES],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2165,8 +2148,7 @@ server.registerTool(
 server.registerTool(
   TOOL.HOVER,
   {
-    description:
-      "Provides inferred type information and documentation for one source position. Evidence scope: language-server type information. Continue with lsp_definition or lsp_audit_symbol.",
+    description: TOOL_DESCRIPTION[TOOL.HOVER],
     inputSchema: positionSchema,
     annotations: readOnly,
   },
@@ -2189,10 +2171,7 @@ server.registerTool(
           itemsReturned: hover?.contents ? 1 : 0,
           itemsReturnedAreSubset: false,
         },
-        continueWith: [
-          {tool: TOOL.DEFINITION, provides: "the exact definition behind this position"},
-          {tool: TOOL.AUDIT_SYMBOL, provides: "a semantic evidence summary for this position"},
-        ],
+        continueWith: [TOOL.DEFINITION, TOOL.AUDIT_SYMBOL],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2203,8 +2182,7 @@ server.registerTool(
 server.registerTool(
   TOOL.DIAGNOSTICS,
   {
-    description:
-      "Provides versioned diagnostics reported by the owning language server for one file. Only result.diagnosticsForCurrentDocument is verified evidence. When the language server does not confirm the current version, that field is null and result.evidence.status is untrusted.",
+    description: TOOL_DESCRIPTION[TOOL.DIAGNOSTICS],
     inputSchema: {
       ...fileSchema,
       maxResults: z
@@ -2237,8 +2215,7 @@ server.registerTool(
           },
           document: {
             version: report.documentVersion,
-            contentFingerprintAlgorithm: FINGERPRINT_ALGORITHM.SHA_256,
-            contentFingerprint: report.documentContentFingerprint,
+            contentFingerprint: publicContentFingerprint(report.documentContentFingerprint),
           },
           diagnosticsForCurrentDocument: versionConfirmed ? diagnosticReport : null,
           unconfirmedDiagnosticReport: versionConfirmed
@@ -2261,10 +2238,7 @@ server.registerTool(
           itemsReturned: diagnostics.length,
           itemsReturnedAreSubset: diagnostics.length < report.items.length,
         },
-        continueWith: [
-          {tool: TOOL.DEFINITION, provides: "the definition associated with a diagnostic position"},
-          {tool: TOOL.HOVER, provides: "type information associated with a diagnostic position"},
-        ],
+        continueWith: [TOOL.DEFINITION, TOOL.HOVER],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2275,8 +2249,7 @@ server.registerTool(
 server.registerTool(
   TOOL.COUNT_TEXT_MATCHES,
   {
-    description:
-      "Counts exact identifier text matches and containing files without starting semantic definition verification. Evidence scope: repository text only. Use this result to estimate work before lsp_count_named_symbol, lsp_audit_named_symbol, or a position-based reference tool.",
+    description: TOOL_DESCRIPTION[TOOL.COUNT_TEXT_MATCHES],
     inputSchema: {
       root: z.string().describe("Absolute workspace or repository root"),
       symbol: z
@@ -2300,11 +2273,8 @@ server.registerTool(
           textSearchMilliseconds: search.elapsedMilliseconds,
         },
         collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
-        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
-        continueWith: [
-          {tool: TOOL.COUNT_NAMED_SYMBOL, provides: "exact-definition and verified-reference counts for a named symbol"},
-          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signatures, and verified-reference summaries"},
-        ],
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY},
+        continueWith: [TOOL.COUNT_NAMED_SYMBOL, TOOL.AUDIT_NAMED_SYMBOL],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -2315,8 +2285,7 @@ server.registerTool(
 server.registerTool(
   TOOL.COUNT_NAMED_SYMBOL,
   {
-    description:
-      "Provides exact-definition and verified-reference counts for a symbol name with a small response. Evidence scope: repository symbol and text-match accounting. Continue with lsp_audit_named_symbol or lsp_references.",
+    description: TOOL_DESCRIPTION[TOOL.COUNT_NAMED_SYMBOL],
     inputSchema: {
       root: z.string().describe("Absolute workspace or repository root"),
       symbol: z
@@ -2356,12 +2325,12 @@ server.registerTool(
           definitions: operation.audits.map((audit, index) => countSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
-        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY},
         continueWith: [
-          {tool: TOOL.AUDIT_NAMED_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
-          {tool: TOOL.REFERENCES, provides: "a page of verified source locations using a selected definition position"},
+          TOOL.AUDIT_NAMED_SYMBOL,
+          TOOL.REFERENCE_PAGE,
           ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected definition referenceSetId"}]
+            ? [TOOL.UNRESOLVED_REFERENCE_PAGE]
             : []),
         ],
       });
@@ -2374,8 +2343,7 @@ server.registerTool(
 server.registerTool(
   TOOL.COUNT_REFERENCES,
   {
-    description:
-      "Provides verified-reference counts for the symbol at one exact position with a small response. Evidence scope: workspace and repository reference accounting. Continue with lsp_audit_symbol or lsp_references.",
+    description: TOOL_DESCRIPTION[TOOL.COUNT_REFERENCES],
     inputSchema: {
       ...positionSchema,
       includeDeclaration: z.boolean().default(true),
@@ -2406,13 +2374,11 @@ server.registerTool(
         },
         result: summary,
         collection: summary.collection,
-        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY, referenceLocationsReturned: 0},
+        presentation: {mode: PRESENTATION_MODE.COUNT_ONLY},
         continueWith: [
-          {tool: TOOL.AUDIT_SYMBOL, provides: "definition identity, signature, and reference summary by file"},
-          {tool: TOOL.REFERENCES, provides: "a page of verified source locations"},
-          ...(audit.referenceSummary.unresolvedCandidateCount > 0
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this referenceSetId"}]
-            : []),
+          TOOL.AUDIT_SYMBOL,
+          TOOL.REFERENCE_PAGE,
+          ...(audit.referenceSummary.unresolvedCandidateCount > 0 ? [TOOL.UNRESOLVED_REFERENCE_PAGE] : []),
         ],
       });
     } catch (error) {
@@ -2424,8 +2390,7 @@ server.registerTool(
 server.registerTool(
   TOOL.AUDIT_NAMED_SYMBOL,
   {
-    description:
-      "Provides a composed semantic evidence summary for an exact symbol name. It reuses compatible count collections and returns definition identity, signatures, reference counts, and files containing references. Continue with lsp_references for source locations.",
+    description: TOOL_DESCRIPTION[TOOL.AUDIT_NAMED_SYMBOL],
     inputSchema: {
       root: z.string().describe("Absolute workspace or repository root"),
       symbol: z
@@ -2465,12 +2430,12 @@ server.registerTool(
           audits: operation.audits.map((audit, index) => auditSummary(audit, operation.selectedDefinitions[index])),
         },
         collection: operation.collection,
-        presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
+        presentation: {mode: PRESENTATION_MODE.COMPACT_SUMMARY},
         continueWith: [
-          {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
-          {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
+          TOOL.REFERENCE_PAGE,
+          TOOL.DEFINITION,
           ...(operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates for a selected audit referenceSetId"}]
+            ? [TOOL.UNRESOLVED_REFERENCE_PAGE]
             : []),
         ],
       });
@@ -2483,8 +2448,7 @@ server.registerTool(
 server.registerTool(
   TOOL.AUDIT_SYMBOL,
   {
-    description:
-      "Provides a composed semantic evidence summary for the symbol at one exact position. It reuses compatible count collections and returns definition identity, signature, reference counts, and files containing references. Continue with lsp_references for source locations.",
+    description: TOOL_DESCRIPTION[TOOL.AUDIT_SYMBOL],
     inputSchema: {
       ...positionSchema,
       includeDeclaration: z.boolean().default(true),
@@ -2515,13 +2479,11 @@ server.registerTool(
         },
         result: summary,
         collection: summary.collection,
-        presentation: {mode: PRESENTATION_MODE.SUMMARY_BY_FILE, referenceLocationsReturned: 0},
+        presentation: {mode: PRESENTATION_MODE.COMPACT_SUMMARY},
         continueWith: [
-          {tool: TOOL.REFERENCES, provides: "the first page of verified source locations"},
-          {tool: TOOL.DEFINITION, provides: "definition resolution for any individual call or alias position"},
-          ...(audit.referenceSummary.unresolvedCandidateCount > 0
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "unresolved candidates from this audit referenceSetId"}]
-            : []),
+          TOOL.REFERENCE_PAGE,
+          TOOL.DEFINITION,
+          ...(audit.referenceSummary.unresolvedCandidateCount > 0 ? [TOOL.UNRESOLVED_REFERENCE_PAGE] : []),
         ],
       });
     } catch (error) {
@@ -2533,8 +2495,7 @@ server.registerTool(
 server.registerTool(
   TOOL.REFERENCES,
   {
-    description:
-      "Provides the first page of verified source locations for the symbol at one exact position. Collection samples the repository source inventory before and after analysis. Read collection.status as complete, limited, partial, or failed. Continue with lsp_reference_page when presentation.nextCursor is present.",
+    description: TOOL_DESCRIPTION[TOOL.REFERENCES],
     inputSchema: {
       ...positionSchema,
       includeDeclaration: z.boolean().default(true),
@@ -2573,18 +2534,14 @@ server.registerTool(
           unresolvedReferences: facts.unresolvedReferences,
           referenceFiles: facts.referenceFiles,
           referenceSetId: entry.id,
-          locations: page.references,
+          referenceGroups: page.referenceGroups,
         },
         collection: facts.collection,
         presentation: page.presentation,
         continueWith: [
-          ...(page.presentation.nextCursor
-            ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}]
-            : []),
-          ...(entry.analysis.unresolvedCandidates.length > 0
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}]
-            : []),
-          {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
+          ...(page.presentation.nextCursor ? [TOOL.REFERENCE_PAGE] : []),
+          ...(entry.analysis.unresolvedCandidates.length > 0 ? [TOOL.UNRESOLVED_REFERENCE_PAGE] : []),
+          TOOL.DEFINITION,
         ],
       });
     } catch (error) {
@@ -2596,8 +2553,7 @@ server.registerTool(
 server.registerTool(
   TOOL.REFERENCE_PAGE,
   {
-    description:
-      "Provides one page from a previously collected verified reference set after checking direct content fingerprints and the repository source inventory. Use the referenceSetId and nextCursor returned by lsp_references or another lsp_reference_page call.",
+    description: TOOL_DESCRIPTION[TOOL.REFERENCE_PAGE],
     inputSchema: {
       referenceSetId: z
         .string()
@@ -2622,17 +2578,17 @@ server.registerTool(
       const page = presentReferenceSet(entry, Number(cursor), pageSize || DEFAULT_REFERENCE_PAGE_SIZE);
       return toolResult(tool, {
         request: {referenceSetId, cursor, pageSize: pageSize || DEFAULT_REFERENCE_PAGE_SIZE},
-        result: {identifier: entry.analysis.identifier, references: facts.references, referenceSetId: entry.id, locations: page.references},
+        result: {
+          identifier: entry.analysis.identifier,
+          references: facts.references,
+          referenceGroups: page.referenceGroups,
+        },
         collection: facts.collection,
         presentation: page.presentation,
         continueWith: [
-          ...(page.presentation.nextCursor
-            ? [{tool: TOOL.REFERENCE_PAGE, provides: "the next page from the same verified reference set"}]
-            : []),
-          ...(entry.analysis.unresolvedCandidates.length > 0
-            ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the unresolved text-match candidates with literal resolution reasons"}]
-            : []),
-          {tool: TOOL.DEFINITION, provides: "definition resolution for an individual reference position"},
+          ...(page.presentation.nextCursor ? [TOOL.REFERENCE_PAGE] : []),
+          ...(entry.analysis.unresolvedCandidates.length > 0 ? [TOOL.UNRESOLVED_REFERENCE_PAGE] : []),
+          TOOL.DEFINITION,
         ],
       });
     } catch (error) {
@@ -2644,8 +2600,7 @@ server.registerTool(
 server.registerTool(
   TOOL.UNRESOLVED_REFERENCE_PAGE,
   {
-    description:
-      "Provides one page of text-match candidates whose definition could not be resolved during a reference collection. Each candidate includes its location, owning workspace when known, attempted methods, and a literal failure reason. The reference set is freshness-checked before the page is returned.",
+    description: TOOL_DESCRIPTION[TOOL.UNRESOLVED_REFERENCE_PAGE],
     inputSchema: {
       referenceSetId: z.string().min(1).describe("Reference-set identifier returned by a count, audit, or reference tool"),
       cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous unresolved-reference page"),
@@ -2670,14 +2625,11 @@ server.registerTool(
         result: {
           identifier: entry.analysis.identifier,
           unresolvedReferences: facts.unresolvedReferences,
-          referenceSetId: entry.id,
           candidates: page.candidates,
         },
         collection: facts.collection,
         presentation: page.presentation,
-        continueWith: page.presentation.nextCursor
-          ? [{tool: TOOL.UNRESOLVED_REFERENCE_PAGE, provides: "the next page of unresolved candidates from the same reference set"}]
-          : [{tool: TOOL.DEFINITION, provides: "a focused definition retry at an unresolved candidate position"}],
+        continueWith: page.presentation.nextCursor ? [TOOL.UNRESOLVED_REFERENCE_PAGE] : [TOOL.DEFINITION],
       });
     } catch (error) {
       return toolError(tool, error);

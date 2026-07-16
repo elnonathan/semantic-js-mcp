@@ -25,7 +25,7 @@ Run `npm run benchmark` for changes that affect repository scanning, reference v
 
 ## Source Of Truth
 
-- `protocol.mjs` owns public literals, server identity, schema identity, runtime components, and defaults.
+- `protocol.mjs` owns public literals, producer identity, schema identity, runtime components, and defaults.
 - `.prettierrc.json` and the `format` scripts define the public source style.
 - `skills/semantic-navigation/references/protocol-literals.md` is generated; update it with `node scripts/generate-protocol-reference.mjs`.
 - `README.md` documents implemented behavior and known limitations.

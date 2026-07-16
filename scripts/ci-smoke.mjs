@@ -51,8 +51,7 @@ async function evaluate(name, input, expectedStatus, expectedExitCode) {
 
 function canonicalResult(tool, collectionStatus, result, extra = {}) {
   return {
-    server: {name: PRODUCT.NAME, version: SERVER_VERSION},
-    resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION},
+    producer: {name: PRODUCT.NAME, version: SERVER_VERSION, resultSchemaVersion: RESULT_SCHEMA.VERSION},
     tool,
     request: {},
     result,
@@ -109,7 +108,23 @@ try {
     "wrong-result-schema-version",
     {
       ...canonicalResult(TOOL.COUNT_REFERENCES, COLLECTION_STATUS.COMPLETE, {}),
-      resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION + 1},
+      producer: {name: PRODUCT.NAME, version: SERVER_VERSION, resultSchemaVersion: RESULT_SCHEMA.VERSION + 1},
+    },
+    CI_STATUS.BLOCKED,
+    CI_EXIT_CODE.BLOCKED,
+  );
+
+  await evaluate(
+    "schema-5-envelope",
+    {
+      server: {name: PRODUCT.NAME, version: SERVER_VERSION},
+      resultSchema: {name: RESULT_SCHEMA.NAME, version: RESULT_SCHEMA.VERSION - 1},
+      tool: TOOL.COUNT_REFERENCES,
+      request: {},
+      result: {},
+      collection: {status: COLLECTION_STATUS.COMPLETE},
+      presentation: {mode: PRESENTATION_MODE.COUNT_ONLY},
+      continueWith: [{tool: TOOL.AUDIT_SYMBOL}],
     },
     CI_STATUS.BLOCKED,
     CI_EXIT_CODE.BLOCKED,
@@ -136,7 +151,7 @@ try {
     "unknown-continuation-tool",
     {
       ...canonicalResult(TOOL.COUNT_REFERENCES, COLLECTION_STATUS.COMPLETE, {}),
-      continueWith: [{tool: "unknown_tool"}],
+      continueWith: ["unknown_tool"],
     },
     CI_STATUS.BLOCKED,
     CI_EXIT_CODE.BLOCKED,

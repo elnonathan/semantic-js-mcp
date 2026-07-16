@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Make count and audit results compact by default while preserving complete requested reference collections for paged follow-up tools.
+- Centralize concise, tool-specific continuation guidance in the versioned protocol vocabulary.
+- Consolidate server and schema identity under `producer`, and represent document fingerprints as `sha256:<hex>`.
+- Return continuation guidance as exact tool-name lists, expose one reusable reference-set identifier per logical response, and remove page fields derivable from the normalized request and presentation counts.
+- Group verified page locations by source file while preserving explicit ranges, discovery methods, location-based pagination, and evidence accounting.
+- Advance the canonical result schema to version 6 for the compact audit presentation contract.
+- Document migration from schema 5 and reject legacy envelopes in canonical-result validation.
+
 ## [0.8.1] - 2026-07-15
 
 ### Fixed

@@ -17,6 +17,7 @@ import {
   DIAGNOSTIC_FRESHNESS,
   ENVIRONMENT_VARIABLE,
   ERROR_CODE,
+  FINGERPRINT_FORMAT,
   FORBIDDEN_PUBLIC_FIELD,
   PRESENTATION_MODE,
   PRODUCT,
@@ -25,6 +26,7 @@ import {
   SERVER_VERSION,
   SIGNATURE_SOURCE,
   TOOL,
+  TOOL_DESCRIPTION,
   TOOL_ORDER,
   UNRESOLVED_REFERENCE_REASON,
 } from "../protocol.mjs";
@@ -49,14 +51,28 @@ function assertNoAmbiguousKeys(value, location = "structuredContent") {
   }
 }
 
+function referenceLocations(result) {
+  return result.referenceGroups.flatMap((group) => group.locations.map((location) => ({file: group.file, ...location})));
+}
+
+function countObjectKey(value, requestedKey) {
+  if (Array.isArray(value)) return value.reduce((total, item) => total + countObjectKey(item, requestedKey), 0);
+  if (!value || typeof value !== "object") return 0;
+  return Object.entries(value).reduce(
+    (total, [key, item]) => total + (key === requestedKey ? 1 : 0) + countObjectKey(item, requestedKey),
+    0,
+  );
+}
+
 function assertResult(response, tool) {
   assert(!response.isError, response.content?.[0]?.text || `${tool} failed`);
   assert(response.structuredContent?.tool === tool, `${tool} omitted its canonical tool name`);
-  assert(response.structuredContent?.server?.name === PRODUCT.NAME, `${tool} omitted its canonical server name`);
-  assert(response.structuredContent?.server?.version === SERVER_VERSION, `${tool} omitted its canonical server version`);
-  assert(response.structuredContent?.resultSchema?.name === RESULT_SCHEMA.NAME, `${tool} omitted its canonical result schema name`);
+  assert(response.structuredContent?.producer?.name === PRODUCT.NAME, `${tool} omitted its canonical producer name`);
+  assert(response.structuredContent?.producer?.version === SERVER_VERSION, `${tool} omitted its canonical producer version`);
+  assert(!("server" in response.structuredContent), `${tool} returned the schema-5 server envelope`);
+  assert(!("resultSchema" in response.structuredContent), `${tool} returned the schema-5 result-schema envelope`);
   assert(
-    response.structuredContent?.resultSchema?.version === RESULT_SCHEMA.VERSION,
+    response.structuredContent?.producer?.resultSchemaVersion === RESULT_SCHEMA.VERSION,
     `${tool} omitted its canonical result schema version`,
   );
   assert(response._meta?.resultSchema === RESULT_SCHEMA.NAME, `${tool} omitted result schema metadata`);
@@ -65,6 +81,14 @@ function assertResult(response, tool) {
   assert(yaml.includes(`tool: ${tool}`), `${tool} did not provide YAML model text`);
   assert(!yaml.trimStart().startsWith("{"), `${tool} rendered JSON instead of YAML model text`);
   deepStrictEqual(parseYaml(yaml), response.structuredContent, `${tool} YAML and structured JSON differ`);
+  assert(
+    response.structuredContent.continueWith.every((continuation) => expectedTools.includes(continuation)),
+    `${tool} returned a non-canonical continuation tool`,
+  );
+  assert(
+    response.structuredContent.continueWith.every((continuation) => typeof continuation === "string"),
+    `${tool} returned a schema-5 continuation object`,
+  );
   assertNoAmbiguousKeys(response.structuredContent);
   return response.structuredContent;
 }
@@ -168,8 +192,17 @@ const transport = new StdioClientTransport({
 
 try {
   await client.connect(transport);
+  assert(client.getInstructions() === undefined, "Server instructions would be repeated in every Codex tool description");
   const listed = await client.listTools();
   assert(JSON.stringify(listed.tools.map((tool) => tool.name)) === JSON.stringify(expectedTools), "Tool order or tool set changed");
+  assert(
+    listed.tools.every((tool) => tool.description === TOOL_DESCRIPTION[tool.name]),
+    "A registered tool description differs from the canonical protocol description",
+  );
+  assert(
+    new Set(listed.tools.map((tool) => tool.description)).size === listed.tools.length,
+    "Tool descriptions repeat shared guidance instead of describing unique behavior",
+  );
 
   const symbols = assertResult(
     await client.callTool({
@@ -263,7 +296,11 @@ try {
     initialDiagnostics.collection.status === (initialDiagnosticsVerified ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL),
     "Diagnostics evidence status and collection status disagree",
   );
-  assert(initialDiagnostics.result.document.contentFingerprint.length === 64, "Diagnostics omitted the analyzed document fingerprint");
+  assert(
+    initialDiagnostics.result.document.contentFingerprint.startsWith(FINGERPRINT_FORMAT.SHA_256_PREFIX) &&
+      initialDiagnostics.result.document.contentFingerprint.length === FINGERPRINT_FORMAT.SHA_256_PREFIX.length + 64,
+    "Diagnostics omitted the canonical analyzed-document fingerprint",
+  );
   assert(
     initialDiagnosticsVerified === (initialDiagnostics.result.diagnosticsForCurrentDocument !== null),
     "Untrusted diagnostics appeared in the verified diagnostics field",
@@ -291,12 +328,17 @@ try {
     "lsp_count_named_symbol",
   );
   assert(count.presentation.mode === PRESENTATION_MODE.COUNT_ONLY, "Count tool returned locations");
-  assert(count.presentation.referenceLocationsReturned === 0, "Count tool returned reference locations");
+  assert(!("referenceLocationsReturned" in count.presentation), "Count presentation repeated its implied location count");
   assert(count.collection.status === COLLECTION_STATUS.PARTIAL, "Unresolved text match was not reported as partial");
   assert(count.request.definitionLimit.mode === "unlimited", "Omitted definition limit was not represented as unlimited");
   assert(count.request.candidateLimit.mode === "unlimited", "Omitted candidate limit was not represented as unlimited");
   assert(count.result.definitions.length === 1, "fileHint did not select one homonymous definition");
   const countedDefinition = count.result.definitions[0];
+  assert(count.continueWith.includes(TOOL.REFERENCE_PAGE), "Named count did not expose its reusable reference set");
+  assert(!count.continueWith.includes(TOOL.REFERENCES), "Named count recommended recollecting an existing reference set");
+  assert(!("referenceFiles" in countedDefinition), "Named count returned the per-file reference list");
+  assert(!("performance" in countedDefinition.collection), "Named count returned detailed collection performance");
+  assert(countObjectKey(countedDefinition, "referenceSetId") === 1, "Named count repeated its reference-set identifier");
   assert(countedDefinition.references.verifiedTotal >= 252, "Named count missed references");
   assert(countedDefinition.textSearch.accountingStatus === ACCOUNTING_STATUS.COMPLETE, "Named count did not account for every text match");
   assert(
@@ -328,6 +370,10 @@ try {
     unresolvedPage.result.candidates.every((candidate) => candidate.identifier === "repeatedTarget"),
     "Unresolved-reference page omitted the textual identifier",
   );
+  assert(!("offset" in unresolvedPage.presentation), "Unresolved page repeated its cursor as an offset");
+  assert(!("pageSize" in unresolvedPage.presentation), "Unresolved page repeated its requested page size");
+  assert(!("candidatesReturnedAreSubset" in unresolvedPage.presentation), "Unresolved page returned a derivable subset flag");
+  assert(countObjectKey(unresolvedPage, "referenceSetId") === 1, "Unresolved page repeated its reference-set identifier");
 
   const audit = assertResult(
     await client.callTool({
@@ -337,6 +383,12 @@ try {
     "lsp_audit_named_symbol",
   );
   assert(audit.result.audits[0].collection.reusedPreviousCollection === true, "Audit did not reuse the compatible count collection");
+  assert(audit.continueWith.includes(TOOL.REFERENCE_PAGE), "Named audit did not expose its reusable reference set");
+  assert(!audit.continueWith.includes(TOOL.REFERENCES), "Named audit recommended recollecting an existing reference set");
+  assert(audit.presentation.mode === PRESENTATION_MODE.COMPACT_SUMMARY, "Named audit did not use compact presentation");
+  assert(!("referenceFiles" in audit.result.audits[0]), "Named audit returned the per-file reference list");
+  assert(audit.result.audits[0].filesContainingReferences > 0, "Named audit omitted the reference file count");
+  assert(!("performance" in audit.result.audits[0].collection), "Named audit returned detailed collection performance");
   assert(
     audit.result.audits[0].referenceSetId === countedDefinition.referenceSetId,
     "Audit changed the compatible reference-set identifier",
@@ -350,6 +402,9 @@ try {
     "lsp_count_references",
   );
   assert(positionCount.result.collection.reusedPreviousCollection === true, "Position count did not reuse the named collection");
+  assert(positionCount.continueWith.includes(TOOL.REFERENCE_PAGE), "Position count did not expose its reusable reference set");
+  assert(!("referenceFiles" in positionCount.result), "Position count returned the per-file reference list");
+  assert(!("performance" in positionCount.result.collection), "Position count returned detailed collection performance");
 
   const positionAudit = assertResult(
     await client.callTool({
@@ -359,6 +414,9 @@ try {
     "lsp_audit_symbol",
   );
   assert(positionAudit.result.collection.reusedPreviousCollection === true, "Position audit did not reuse the count collection");
+  assert(positionAudit.continueWith.includes(TOOL.REFERENCE_PAGE), "Position audit did not expose its reusable reference set");
+  assert(positionAudit.presentation.mode === PRESENTATION_MODE.COMPACT_SUMMARY, "Position audit did not use compact presentation");
+  assert(!("referenceFiles" in positionAudit.result), "Position audit returned the per-file reference list");
   assert(positionAudit.result.signature.length > 0, "Position audit omitted the resolved signature");
   assert(
     Object.values(SIGNATURE_SOURCE).includes(positionAudit.result.signatureSource),
@@ -373,13 +431,22 @@ try {
     "lsp_references",
   );
   assert(firstPage.collection.status === COLLECTION_STATUS.PARTIAL, "Reference collection did not preserve unresolved-match uncertainty");
+  assert(firstPage.result.referenceFiles.length > 0, "Reference page omitted detailed file evidence");
+  assert(firstPage.collection.performance.semanticRequests >= 0, "Reference page omitted collection performance");
   assert(firstPage.presentation.mode === PRESENTATION_MODE.PAGE, "Reference response is not a page");
   assert(firstPage.presentation.locationsReturned === 25, "Reference page size was not applied");
   assert(firstPage.presentation.nextCursor === "25", "Reference page omitted its next cursor");
+  const firstPageLocations = referenceLocations(firstPage.result);
+  assert(firstPageLocations.length === 25, "Grouped reference page changed its location count");
   assert(
-    firstPage.result.locations.every((item) => item.discoveryMethod),
+    firstPageLocations.every((item) => item.discoveryMethod),
     "Reference locations omitted literal discovery methods",
   );
+  assert(
+    firstPage.result.referenceGroups.every((group) => group.file),
+    "Reference group omitted its source file",
+  );
+  assert(countObjectKey(firstPage, "referenceSetId") === 1, "First reference page repeated its reference-set identifier");
 
   const secondPage = assertResult(
     await client.callTool({
@@ -388,9 +455,11 @@ try {
     }),
     "lsp_reference_page",
   );
-  assert(secondPage.presentation.offset === 25, "Second page used the wrong offset");
-  assert(secondPage.result.locations.length === 25, "Second page used the wrong size");
-  assert(secondPage.result.referenceSetId === firstPage.result.referenceSetId, "Pagination changed the reference set");
+  assert(!("offset" in secondPage.presentation), "Reference page repeated its cursor as an offset");
+  assert(!("pageSize" in secondPage.presentation), "Reference page repeated its requested page size");
+  assert(!("locationsReturnedAreSubset" in secondPage.presentation), "Reference page returned a derivable subset flag");
+  assert(referenceLocations(secondPage.result).length === 25, "Second page used the wrong size");
+  assert(countObjectKey(secondPage, "referenceSetId") === 1, "Later reference page repeated its reference-set identifier");
 
   await writeFile(usageFile, `${await readFile(usageFile, "utf8")}\nexport const changedAfterCollection = true;\n`);
   assertResult(
@@ -430,14 +499,14 @@ try {
     "Reference source counts do not reconcile with the verified total",
   );
   assert(
-    withoutDeclaration.result.locations.some(
+    referenceLocations(withoutDeclaration.result).some(
       (location) =>
         path.basename(location.file) === path.basename(usageFile) && location.range.start.line === 3 && location.range.start.column === 3,
     ),
     "includeDeclaration=false removed the originating usage",
   );
   assert(
-    !withoutDeclaration.result.locations.some(
+    !referenceLocations(withoutDeclaration.result).some(
       (location) =>
         path.basename(location.file) === path.basename(targetFile) && location.range.start.line === 2 && location.range.start.column === 17,
     ),
@@ -658,7 +727,7 @@ try {
         tools: expectedTools,
         yamlRepresentation: "ok",
         structuredJsonContract: "ok",
-        visibleServerAndSchemaVersion: "ok",
+        visibleProducerAndSchemaVersion: "ok",
         positionSignatureEvidence: "ok",
         unlimitedCollection: "ok",
         explicitLimitReporting: "ok",

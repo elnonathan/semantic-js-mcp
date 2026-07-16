@@ -19,15 +19,17 @@ Supported source extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.
 | Exact source position                                | `lsp_hover`                     | Inferred type and documentation                          | `lsp_definition`, `lsp_audit_symbol`               |
 | One changed file                                     | `lsp_diagnostics`               | Focused diagnostics                                      | `lsp_definition`, `lsp_hover`                      |
 | Exact symbol text, unknown scope                     | `lsp_count_text_matches`        | Text-match and file counts without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
-| Exact symbol name, broad scope                       | `lsp_count_named_symbol`        | Small count response                                     | `lsp_audit_named_symbol`, `lsp_references`         |
-| Exact source position, broad scope                   | `lsp_count_references`          | Small count response                                     | `lsp_audit_symbol`, `lsp_references`               |
-| Exact symbol name, composed evidence                 | `lsp_audit_named_symbol`        | Definition, signature, counts, files                     | `lsp_references`                                   |
-| Exact source position, composed evidence             | `lsp_audit_symbol`              | Definition, signature, counts, files                     | `lsp_references`                                   |
+| Exact symbol name, broad scope                       | `lsp_count_named_symbol`        | Small count response                                     | `lsp_audit_named_symbol`, `lsp_reference_page`     |
+| Exact source position, broad scope                   | `lsp_count_references`          | Small count response                                     | `lsp_audit_symbol`, `lsp_reference_page`           |
+| Exact symbol name, composed evidence                 | `lsp_audit_named_symbol`        | Compact definition, signature, counts, and freshness     | `lsp_reference_page`                               |
+| Exact source position, composed evidence             | `lsp_audit_symbol`              | Compact definition, signature, counts, and freshness     | `lsp_reference_page`                               |
 | Exact source position, locations needed              | `lsp_references`                | First verified-location page                             | `lsp_reference_page`                               |
 | Existing `referenceSetId`                            | `lsp_reference_page`            | Later verified-location page                             | `lsp_reference_page`, `lsp_definition`             |
 | Existing `referenceSetId` with unresolved candidates | `lsp_unresolved_reference_page` | Candidate locations and literal resolution reasons       | `lsp_unresolved_reference_page`, `lsp_definition`  |
 
 Composite audit tools are convenience calls over shared internal primitives. They preserve access to narrow tools; choose either route according to the evidence needed.
+
+Count and audit tools keep their default response compact. They still collect and cache the complete requested reference set when no collection limit is supplied. Use a returned `referenceSetId` with `lsp_reference_page` for verified locations and detailed collection evidence or with `lsp_unresolved_reference_page` for unresolved candidates. Use `lsp_references` when starting from an exact source position without an existing reference set.
 
 The complete protocol vocabulary is generated from the server's source of truth. Read [references/protocol-literals.md](references/protocol-literals.md) when implementing an adapter, validating a response parser, or interpreting an unfamiliar literal.
 
@@ -45,13 +47,12 @@ The canonical machine result is JSON in `structuredContent`. The model-facing te
 
 Every result has:
 
-- `server`: the exact semantic-js-mcp server name and version that answered the call.
-- `resultSchema`: the exact canonical result schema name and version.
+- `producer`: the exact semantic-js-mcp name, server version, and result-schema version that answered the call.
 - `request`: normalized inputs and limit interpretation.
 - `result`: evidence returned by the tool.
 - `collection`: completion state for evidence collection.
 - `presentation`: response shape for the collected evidence.
-- `continueWith`: exact tool names that add another evidence type.
+- `continueWith`: a list of exact tool names that add another evidence type.
 
 ### Collection
 
@@ -67,10 +68,12 @@ Collection status describes static evidence collection. Runtime correctness come
 - `all-items`: all collected items appear.
 - `subset`: the response contains a requested subset; counts describe the full collection.
 - `count-only`: locations are retained for reuse and omitted from this response.
-- `summary-by-file`: locations are grouped by file and retained for reuse.
+- `compact-summary`: identity, signature, counts, status, and freshness appear while location and operational detail remains in the reusable reference set.
 - `page`: locations are paginated; use `presentation.nextCursor` with `lsp_reference_page`.
 
 Presentation shape does not change `collection.status`.
+
+Reference pages return `referenceGroups` grouped by exact source `file`. Read `locationsAvailable` and `locationsReturned` as location counts, not group counts. Every grouped location retains its explicit `range` and `discoveryMethod`. Pagination selects locations before grouping. File groups follow first appearance, locations retain their relative order within each file, and cross-file interleaving carries no semantic meaning.
 
 For reference calls, `includeDeclaration: false` removes locations that resolve to the requested declaration. It does not remove the query position when that position is a usage. Verify the literal accounting invariant `verifiedTotal = foundByOwningWorkspaceLanguageServer + verifiedFromOtherWorkspaces`; a violation is a tool-contract defect, not evidence about the repository.
 
@@ -92,7 +95,7 @@ Omitted `maxCandidates` and `maxDefinitions` mean `{mode: unlimited}`. A supplie
 
 `matchesWhoseDefinitionCouldNotBeResolved > 0` keeps uncertainty visible and produces `collection.status: partial` even when accounting is complete.
 
-Use the reported `referenceSetId` with `lsp_unresolved_reference_page` when unresolved candidates are material. Read `reason` and `typescriptProject` literally. `candidate-opened-in-inferred-typescript-project` proves tsserver did not associate that file with a configured project; other reasons do not establish that an alias, exclusion, or project configuration caused the failure.
+Use the reported `referenceSetId` with `lsp_unresolved_reference_page` when unresolved candidates are material. The identifier appears once in an initial count, audit, or reference response and is carried in later page requests rather than repeated in each page result. Read `reason` and `typescriptProject` literally. `candidate-opened-in-inferred-typescript-project` proves tsserver did not associate that file with a configured project; other reasons do not establish that an alias, exclusion, or project configuration caused the failure.
 
 ### Freshness
 
@@ -108,7 +111,7 @@ The MCP reports evidence status, not code approval. CI consumers may use `script
 
 ### Cost
 
-Omitted collection limits still mean unlimited. The server never inserts a hidden candidate cap. Reference results report text-search duration, semantic-verification duration, semantic request count, and configured concurrency under `collection.performance`. Use `lsp_count_text_matches` before an expensive named audit when the identifier may be common; supply `maxCandidates` only when an intentionally limited answer is acceptable.
+Omitted collection limits still mean unlimited. The server never inserts a hidden candidate cap. Detailed reference results report text-search duration, semantic-verification duration, semantic request count, and configured concurrency under `collection.performance`; compact counts and audits omit these operational fields. Use `lsp_count_text_matches` before an expensive named audit when the identifier may be common; supply `maxCandidates` only when an intentionally limited answer is acceptable.
 
 ## Evidence Workflow
 
