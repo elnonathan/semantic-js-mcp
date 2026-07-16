@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
-    "@vue/compiler-sfc": "3.5.39",
+    "@vue/compiler-sfc": "3.5.40",
     "@vue/language-server": "3.0.8",
     "typescript": "6.0.3",
     "typescript-language-server": "5.1.3",
