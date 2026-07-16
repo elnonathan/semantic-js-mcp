@@ -19,6 +19,10 @@ npm run doctor
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:release
+npm run smoke:evaluation
+npm run smoke:matrix
+npm run smoke:distribution
 ```
 
 Run `npm run benchmark` for changes that affect repository scanning, reference verification, caching, lifecycle, or memory.
@@ -34,6 +38,7 @@ Run `npm run benchmark` for changes that affect repository scanning, reference v
 ## Change Expectations
 
 - Centralize public literals in `protocol.mjs`.
+- Keep release, host, fixture, and CI-only literals in their focused modules rather than expanding the public protocol vocabulary.
 - Run `npm run format` after changing public source or documentation.
 - Regenerate protocol documentation instead of editing it directly.
 - Add isolated fixtures for positive, partial, and failed evidence.
@@ -51,10 +56,21 @@ npm run check:runtime
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:release
+npm run smoke:evaluation
+npm run smoke:matrix
 npm run smoke:distribution
 ```
 
 Also run `npm run benchmark` when collection cost or memory could change. Run `npm run doctor` when changing runtime resolution, provider startup, the CLI, or diagnostic trust. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
+
+`npm run release:verify` executes the complete local release gate and reports every check in one machine-readable result. It does not publish, tag, or modify an installed plugin.
+
+Use `npm run verify:published -- <version>` after publishing npm and the matching `v<version>` repository tag. It queries that exact registry version, installs it with isolated temporary state, verifies the installed executable, runs its doctor, then installs the plugin from the tag-pinned Codex marketplace in a temporary `CODEX_HOME`. Registry or network unavailability returns `blocked` rather than passing or failing the package.
+
+Use `npm run validate:repositories -- <configuration.json|yaml>` for authorized real-repository observations. Configuration stays external to the project and contains repository entries with an `id`, absolute `root`, and `probes`. Supported probe kinds are `named-symbol` with `symbol` and optional `fileHint`, and `diagnostics` with a repository-relative `file`. The runner reports tool failures, incomplete evidence, untrusted diagnostics, and unavailable repositories separately.
+
+`npm run evaluate:agent` prints model-independent compact-result cases. An answer file can be graded with `npm run evaluate:agent -- --answers <file>`; hosted or local model execution remains optional and outside the fixture contract.
 
 ## Changelog And Versioning
 

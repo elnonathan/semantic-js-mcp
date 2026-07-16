@@ -2,6 +2,18 @@
   "name": "semantic-js-mcp",
   "version": "0.8.1",
   "description": "Semantic understanding of JavaScript codebases for AI agents",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "lsp",
+    "language-server-protocol",
+    "javascript",
+    "typescript",
+    "vue",
+    "semantic-analysis",
+    "code-navigation",
+    "ai-agents"
+  ],
   "author": {
     "name": "Jonathan Muñoz Lucas",
     "email": "git@jonathanmunoz.dev",
@@ -32,7 +44,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "npm run format:check && node --check protocol.mjs && node --check server.mjs && node --check cli.mjs && node --check lib/runtime.mjs && node --check lib/doctor.mjs && node --check scripts/generate-protocol-reference.mjs && node --check scripts/check-protocol-literals.mjs && node --check scripts/check-runtime.mjs && node --check scripts/semantic-js-mcp-ci.mjs && node --check scripts/ci-smoke.mjs && node --check scripts/smoke.mjs && node --check scripts/vue-smoke.mjs && node --check scripts/benchmark.mjs && node --check scripts/distribution-policy.mjs && node --check scripts/distribution-smoke.mjs && node scripts/generate-protocol-reference.mjs --check && node scripts/check-protocol-literals.mjs",
+    "check": "npm run format:check && node --check protocol.mjs && node --check server.mjs && node --check cli.mjs && node --check lib/runtime.mjs && node --check lib/doctor.mjs && node --check scripts/generate-protocol-reference.mjs && node --check scripts/check-protocol-literals.mjs && node --check scripts/check-runtime.mjs && node --check scripts/semantic-js-mcp-ci.mjs && node --check scripts/ci-smoke.mjs && node --check scripts/smoke.mjs && node --check scripts/vue-smoke.mjs && node --check scripts/benchmark.mjs && node --check scripts/distribution-policy.mjs && node --check scripts/distribution-smoke.mjs && node --check scripts/release-contract.mjs && node --check scripts/release-verify.mjs && node --check scripts/release-smoke.mjs && node --check scripts/postpublication-smoke.mjs && node --check scripts/codex-plugin-verification.mjs && node --check scripts/agent-evaluation-contract.mjs && node --check scripts/agent-evaluation.mjs && node --check scripts/agent-evaluation-smoke.mjs && node --check scripts/repository-matrix-contract.mjs && node --check scripts/repository-matrix.mjs && node --check scripts/repository-matrix-smoke.mjs && node scripts/generate-protocol-reference.mjs --check && node scripts/check-protocol-literals.mjs",
     "check:runtime": "node scripts/check-runtime.mjs",
     "doctor": "node cli.mjs doctor",
     "ci:evaluate": "node scripts/semantic-js-mcp-ci.mjs",
@@ -40,6 +52,13 @@
     "smoke:ci": "node scripts/ci-smoke.mjs",
     "smoke:vue": "node scripts/vue-smoke.mjs",
     "smoke:distribution": "node scripts/distribution-smoke.mjs",
+    "smoke:release": "node scripts/release-smoke.mjs",
+    "smoke:evaluation": "node scripts/agent-evaluation-smoke.mjs",
+    "smoke:matrix": "node scripts/repository-matrix-smoke.mjs",
+    "evaluate:agent": "node scripts/agent-evaluation.mjs",
+    "validate:repositories": "node scripts/repository-matrix.mjs",
+    "release:verify": "node scripts/release-verify.mjs",
+    "verify:published": "node scripts/postpublication-smoke.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "format": "prettier --write \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\"",
     "format:check": "prettier --check \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\""

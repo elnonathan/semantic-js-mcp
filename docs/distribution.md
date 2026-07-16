@@ -52,3 +52,14 @@ npm run smoke:distribution
 ```
 
 Run `npm run doctor` separately when the structured installation evidence is part of the review. Exit `2` is an explicit untrusted diagnostic result and must not be described as a clean semantic pass.
+
+## Release Verification
+
+```bash
+npm run release:verify
+npm run verify:published -- <version>
+```
+
+The local release gate runs every configured source, runtime, semantic, evaluation, distribution, and benchmark check and reports all failures instead of stopping at the first one. It performs no publication or installed-plugin mutation.
+
+Postpublication verification requires an explicit version and the matching `v<version>` repository tag. It queries that immutable registry version, installs it with a fresh temporary npm cache and consumer project, verifies the installed executable and manifest, then runs the installed doctor to cover MCP startup, tool discovery, TypeScript evidence, and Vue navigation. It also installs the plugin from the tag-pinned marketplace inside a temporary `CODEX_HOME` and verifies the enabled plugin version. Temporary state is removed afterward. An unavailable registry, marketplace, or network is reported as `blocked`.

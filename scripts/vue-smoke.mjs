@@ -260,6 +260,9 @@ try {
   if (!ambiguousCount.structuredContent?.continueWith?.includes(TOOL.AUDIT_SYMBOL)) {
     throw new Error("Ambiguous Vue named count did not recommend position-based audit");
   }
+  if (ambiguousCount.structuredContent.continueWith[0] !== TOOL.AUDIT_SYMBOL) {
+    throw new Error("Ambiguous Vue named count did not prioritize position-based audit");
+  }
 
   const filteredCount = await client.callTool({
     name: TOOL.COUNT_NAMED_SYMBOL,

@@ -132,7 +132,11 @@ const consumer = path.join(workspace, "packages", "consumer");
 const consumerSrc = path.join(consumer, "src");
 const consumerAliasFile = path.join(consumerSrc, "alias-usage.ts");
 const moduleFile = path.join(src, "module.mjs");
+const rootModuleFile = path.join(workspace, "root-module.mjs");
+const nestedModuleDirectory = path.join(workspace, "scripts");
+const nestedModuleFile = path.join(nestedModuleDirectory, "module-helper.mjs");
 await mkdir(consumerSrc, {recursive: true});
+await mkdir(nestedModuleDirectory, {recursive: true});
 await writeFile(path.join(consumer, "package.json"), JSON.stringify({private: true, type: "module"}));
 await writeFile(
   path.join(consumer, "tsconfig.json"),
@@ -181,6 +185,8 @@ await writeFile(
   ].join("\n"),
 );
 await writeFile(moduleFile, "export function moduleFunction(value) { return value; }\n");
+await writeFile(rootModuleFile, "export function rootModuleFunction(value) { return value; }\n");
+await writeFile(nestedModuleFile, "export function nestedModuleFunction(value) { return value; }\n");
 
 const client = new Client({name: "semantic-js-mcp-generic-smoke", version: "1.0.0"});
 const transport = new StdioClientTransport({
@@ -222,17 +228,51 @@ try {
   );
   assert(symbols.request.resultLimit.mode === "unlimited", "Omitted result limit must be represented as unlimited");
 
-  const moduleSymbols = assertResult(
-    await client.callTool({
-      name: TOOL.DOCUMENT_SYMBOLS,
-      arguments: {file: moduleFile, root: workspace},
-    }),
-    TOOL.DOCUMENT_SYMBOLS,
-  );
-  assert(
-    moduleSymbols.result.symbols.some((symbol) => symbol.name === "moduleFunction"),
-    "MJS document symbol missing",
-  );
+  const standaloneModules = [
+    {file: rootModuleFile, symbol: "rootModuleFunction"},
+    {file: moduleFile, symbol: "moduleFunction"},
+    {file: nestedModuleFile, symbol: "nestedModuleFunction"},
+  ];
+  for (const standaloneModule of standaloneModules) {
+    const moduleSymbols = assertResult(
+      await client.callTool({
+        name: TOOL.DOCUMENT_SYMBOLS,
+        arguments: {file: standaloneModule.file, root: workspace},
+      }),
+      TOOL.DOCUMENT_SYMBOLS,
+    );
+    assert(
+      moduleSymbols.result.symbols.some((symbol) => symbol.name === standaloneModule.symbol),
+      `MJS document symbol missing: ${standaloneModule.symbol}`,
+    );
+
+    const moduleCount = assertResult(
+      await client.callTool({
+        name: TOOL.COUNT_NAMED_SYMBOL,
+        arguments: {root: workspace, symbol: standaloneModule.symbol},
+      }),
+      TOOL.COUNT_NAMED_SYMBOL,
+    );
+    assert(
+      moduleCount.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.ONE,
+      `MJS named count did not select ${standaloneModule.symbol}`,
+    );
+    assert(moduleCount.collection.status === COLLECTION_STATUS.COMPLETE, `MJS named count was not complete: ${standaloneModule.symbol}`);
+
+    const moduleAudit = assertResult(
+      await client.callTool({
+        name: TOOL.AUDIT_NAMED_SYMBOL,
+        arguments: {root: workspace, symbol: standaloneModule.symbol},
+      }),
+      TOOL.AUDIT_NAMED_SYMBOL,
+    );
+    assert(
+      moduleAudit.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.ONE,
+      `MJS named audit did not preserve ${standaloneModule.symbol}`,
+    );
+    assert(moduleAudit.result.audits[0]?.signature.length > 0, `MJS named audit omitted its signature: ${standaloneModule.symbol}`);
+    assert(moduleAudit.collection.status === COLLECTION_STATUS.COMPLETE, `MJS named audit was not complete: ${standaloneModule.symbol}`);
+  }
 
   const workspaceSymbols = assertResult(
     await client.callTool({
@@ -364,6 +404,10 @@ try {
     countedDefinition.references.verifiedFromOtherWorkspaces >= 1,
     "Cross-project alias reference was not verified from its owning workspace",
   );
+  assert(
+    count.continueWith.indexOf(TOOL.UNRESOLVED_REFERENCE_PAGE) < count.continueWith.indexOf(TOOL.REFERENCE_PAGE),
+    "Named count did not prioritize unresolved evidence before reference locations",
+  );
 
   const missingNamedCount = assertResult(
     await client.callTool({
@@ -421,6 +465,10 @@ try {
   assert(audit.result.definitionSelectionStatus === DEFINITION_SELECTION_STATUS.ONE, "Named audit did not report one selected definition");
   assert(audit.continueWith.includes(TOOL.REFERENCE_PAGE), "Named audit did not expose its reusable reference set");
   assert(!audit.continueWith.includes(TOOL.REFERENCES), "Named audit recommended recollecting an existing reference set");
+  assert(
+    audit.continueWith.indexOf(TOOL.UNRESOLVED_REFERENCE_PAGE) < audit.continueWith.indexOf(TOOL.REFERENCE_PAGE),
+    "Named audit did not prioritize unresolved evidence before reference locations",
+  );
   assert(audit.presentation.mode === PRESENTATION_MODE.COMPACT_SUMMARY, "Named audit did not use compact presentation");
   assert(!("referenceFiles" in audit.result.audits[0]), "Named audit returned the per-file reference list");
   assert(audit.result.audits[0].filesContainingReferences > 0, "Named audit omitted the reference file count");

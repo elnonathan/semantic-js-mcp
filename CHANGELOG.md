@@ -17,6 +17,15 @@ All notable changes to this project will be documented in this file.
 - Verify import and usage bindings against `fileHint` during named audits without treating the hinted filename as a declaration.
 - Share concurrent diagnostic acquisition, negotiate provider pull support, and reject evidence when file content changes during acquisition.
 - Report the owning diagnostic provider and document language once per result, with source region and embedded language on each diagnostic when its range establishes them.
+- Order continuation tools so position-based disambiguation and unresolved-candidate inspection precede broader follow-up pages when those uncertainties are present.
+
+### Added
+
+- Add deterministic release verification, isolated postpublication package verification, and externally configured repository-matrix commands.
+- Reject repository-matrix diagnostic paths whose canonical target escapes the configured repository root.
+- Add model-independent fixtures for compact-result continuation and coverage decisions.
+- Cover named symbol discovery and audits for standalone JavaScript modules at workspace-root and nested source locations.
+- Add npm keywords for MCP, language-server, JavaScript, and semantic-navigation discovery.
 
 ## [0.8.1] - 2026-07-15
 

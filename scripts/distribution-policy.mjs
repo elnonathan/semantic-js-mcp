@@ -19,6 +19,34 @@ export const NPM_AUTOMATIC_PACKAGE_FILE = Object.freeze([
   REQUIRED_PACKAGE_FILE.LICENSE,
 ]);
 
+export const CODEX_DISTRIBUTION = Object.freeze({
+  EXECUTABLE: "codex",
+  HOME_ENVIRONMENT_VARIABLE: "CODEX_HOME",
+  MARKETPLACE_NAME: "elnonathan",
+  MARKETPLACE_SOURCE: "elnonathan/semantic-js-mcp",
+  PLUGIN_SELECTOR: "semantic-js-mcp@elnonathan",
+  VERSION_REF_PREFIX: "v",
+  HOME_DIRECTORY: "codex-home",
+  PLUGIN_COMMAND: "plugin",
+  MARKETPLACE_COMMAND: "marketplace",
+  ADD_COMMAND: "add",
+  LIST_COMMAND: "list",
+  REF_ARGUMENT: "--ref",
+  JSON_ARGUMENT: "--json",
+  NETWORK_UNAVAILABLE_TEXT: Object.freeze([
+    "Could not resolve host",
+    "failed to lookup address information",
+    "network is unreachable",
+    "network timeout",
+    "timed out",
+    "unable to access",
+  ]),
+});
+
+export const NPM_DISTRIBUTION = Object.freeze({
+  CACHE_ENVIRONMENT_VARIABLE: "npm_config_cache",
+});
+
 const WINDOWS_PLATFORM = "win32";
 const WINDOWS_COMMAND_SUFFIX = ".cmd";
 const DEPENDENCY_DIRECTORY_PREFIX = "node_modules/";

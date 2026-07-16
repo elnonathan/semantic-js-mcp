@@ -2119,17 +2119,17 @@ function namedSymbolContinuations(operation, includeNamedAudit, hasFileHint) {
   const hasSelectedDefinitions = selectionStatus !== DEFINITION_SELECTION_STATUS.NONE;
   const hasOneSelectedDefinition = selectionStatus === DEFINITION_SELECTION_STATUS.ONE;
   const hasVerifiedFileHintBinding = Boolean(operation.fileHintResolution?.sourcePositionForAudit);
+  const hasUnresolvedReferences = operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0);
 
+  if (selectionStatus === DEFINITION_SELECTION_STATUS.MULTIPLE) continuations.push(TOOL.AUDIT_SYMBOL);
   if (includeNamedAudit && (hasSelectedDefinitions || hasFileHint)) continuations.push(TOOL.AUDIT_NAMED_SYMBOL);
   if (includeNamedAudit && !hasSelectedDefinitions && hasFileHint) return continuations;
   if (!hasSelectedDefinitions && !hasVerifiedFileHintBinding) {
     continuations.push(hasFileHint ? TOOL.DOCUMENT_SYMBOLS : TOOL.WORKSPACE_SYMBOLS);
   }
-  if (!hasOneSelectedDefinition) continuations.push(TOOL.AUDIT_SYMBOL);
+  if (!hasOneSelectedDefinition && !continuations.includes(TOOL.AUDIT_SYMBOL)) continuations.push(TOOL.AUDIT_SYMBOL);
+  if (hasUnresolvedReferences) continuations.push(TOOL.UNRESOLVED_REFERENCE_PAGE);
   if (operation.audits.length > 0) continuations.push(TOOL.REFERENCE_PAGE);
-  if (operation.audits.some((audit) => audit.referenceSummary.unresolvedCandidateCount > 0)) {
-    continuations.push(TOOL.UNRESOLVED_REFERENCE_PAGE);
-  }
   return continuations;
 }
 

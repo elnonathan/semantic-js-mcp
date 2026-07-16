@@ -16,6 +16,7 @@ import {
 } from "../protocol.mjs";
 import {
   REQUIRED_PACKAGE_FILE,
+  NPM_DISTRIBUTION,
   allProductionDependenciesAreBundled,
   npmExecutableName,
   packagePathIsAllowed,
@@ -27,7 +28,7 @@ const packageOutput = path.join(workspace, "package");
 const consumer = path.join(workspace, "consumer");
 const npmCache = path.join(workspace, "npm-cache");
 const npmCli = process.env.npm_execpath;
-const npmEnvironment = {...process.env, npm_config_cache: npmCache};
+const npmEnvironment = {...process.env, [NPM_DISTRIBUTION.CACHE_ENVIRONMENT_VARIABLE]: npmCache};
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {

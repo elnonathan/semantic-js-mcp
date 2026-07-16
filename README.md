@@ -154,18 +154,6 @@ Named counts and audits report `definitionSelectionStatus` as `no-definition-sel
 
 When `fileHint` selects no declaration, a named audit can verify whether source bindings resolve to the hinted file while keeping declaration identity and uncertainty explicit.
 
-### Vue template definitions
-
-Definition lookup uses the Vue language server and TypeScript server first. If both leave a Vue template tag unresolved, the server parses the SFC and follows only a matching local import from `<script>` or `<script setup>`. A successful fallback reports `resolutionMethod: vue-template-import-binding-definition`. This proves an imported component binding; it does not infer global component registration or filename-based identity.
-
-For named Vue queries, `fileHint` narrows declarations already reported by the language server. Component filenames are not treated as declarations. Use position-based navigation when a component name has no exact declaration in the hinted SFC or matches multiple declarations.
-
-The Vue parser and TypeScript AST dependencies are loaded lazily only when this fallback is needed.
-
-### Signature source
-
-Position audits first request hover information at the query position. If that position has a resolved definition but no hover information, the audit requests hover at the resolved declaration. `signatureSource` reports `query-position-hover`, `resolved-definition-hover`, or `not-reported`; `signatureDefinition` identifies the declaration used by the fallback.
-
 ### Limits
 
 Collection limits accept positive integers only:
@@ -175,34 +163,15 @@ Collection limits accept positive integers only:
 
 Omitting `maxCandidates` or `maxDefinitions` requests unlimited collection. `pageSize` and `maxResults` only control returned items for tools that expose them as presentation parameters.
 
-### Text-match accounting
-
-Repository verification reports:
-
-- `matchesFound`
-- `matchesChecked`
-- `matchesToRequestedSymbol`
-- `matchesToDifferentSymbols`
-- `matchesWhoseDefinitionCouldNotBeResolved`
-- `accountingStatus: complete | incomplete`
-
-`accountingStatus: complete` means every discovered text match appears in exactly one classification. Unresolved matches remain explicit and make semantic collection `partial`.
-
-Count, audit, and initial reference responses expose one `referenceSetId` for the reusable collection. Later page requests carry that same identifier; page results do not repeat it. Use `lsp_unresolved_reference_page` to inspect reported unresolved candidates without inflating every summary. The server also queries tsserver `projectInfo` for unresolved candidates and reports whether the file belongs to a configured or inferred TypeScript project. Reasons describe only observed behavior; they do not speculate that an alias caused a failure.
-
 ### Freshness
 
-Reusable reference sets store SHA-256 fingerprints for the source file, native reference files, every cross-workspace candidate file, and the relevant `package.json`, `tsconfig.json`, or `jsconfig.json` files. They also store a repository source-inventory fingerprint built from every relevant path, file size, and high-resolution modification time. Reuse and pagination verify both layers, so new, deleted, renamed, or normally modified source files invalidate repository-wide completeness. Changed evidence produces `REFERENCE_SET_CONTENT_CHANGED` and requires a new `lsp_references` collection. Expired or evicted sets produce `REFERENCE_SET_NOT_FOUND_OR_EXPIRED`.
+Reusable reference sets verify participating file content and the repository
+source inventory before returning another page. Added, removed, renamed, or
+changed sources invalidate stale evidence instead of silently reusing it.
 
-The inventory is sampled before and after collection. If repository sources change during collection, the server retries once and then returns `REPOSITORY_CHANGED_DURING_COLLECTION` instead of publishing an unstable result.
-
-Diagnostics clear their cache on `didChange` and report the analyzed document version and content fingerprint as `sha256:<hex>`. Only a language-server report for that exact document version appears under `diagnosticsForCurrentDocument`. Otherwise that field is `null`, `evidence.status` is `untrusted`, and any unconfirmed report is isolated under `unconfirmedDiagnosticReport`. Untrusted diagnostics always produce a partial collection.
-
-The server prefers diagnostic pull when the owning provider advertises it, falls back to push notifications, and shares concurrent requests for the same document snapshot. Push evidence is trusted only when it identifies the current version.
-
-Diagnostic results identify the owning provider and document language. Each item also identifies its containing document or Vue block and embedded language when the reported range establishes them; uncertain provenance remains `unknown`.
-
-Diagnostic severities are preserved literally. If a language server omits severity, the result reports `not-reported`; it is not silently treated as information, warning, or error.
+Diagnostics are current only when the owning provider confirms the analyzed
+document snapshot. Unconfirmed reports remain isolated and explicitly
+`untrusted`; an empty unconfirmed report is never presented as a clean file.
 
 ### CI policy adapter
 
@@ -215,40 +184,19 @@ MCP tools report evidence; they do not decide whether a code change passes. `npm
 
 Pass `--yaml` after the input path for a YAML representation. The adapter accepts canonical JSON or YAML, validates the producer and result-schema version plus public tool and presentation literals, and never converts incomplete evidence into a pass.
 
-### Installation doctor
-
-`semantic-js-mcp doctor` returns a structured installation report with the same deterministic status vocabulary and exit codes as the CI adapter:
-
-- `pass`, exit `0`: every installation and semantic fixture check passed;
-- `fail`, exit `1`: the server ran, but a functional check returned the wrong result;
-- `untrusted`, exit `2`: runtime checks passed, but a provider did not confirm current diagnostic evidence;
-- `blocked`, exit `3`: a runtime requirement, provider component, or MCP startup step was unavailable.
-
-Use `semantic-js-mcp doctor --yaml` for a YAML representation. An `untrusted` result is not converted to a package failure by the distribution smoke test, but the reason remains explicit in the report.
-
 ### Cost visibility
 
-`lsp_count_text_matches` scans repository text without issuing per-match semantic requests. Use it to measure common identifiers before requesting verified counts or audits. Semantic collections preserve omitted limits as unlimited. Detailed reference responses report text-search time, semantic-verification time, semantic request count, maximum concurrency, and memory observations under `collection.performance`. Compact counts and audits omit those operational details without weakening collection status. There is no hidden candidate cap.
-
-The bundled Codex MCP configuration allows up to 300 seconds for one tool call. Reaching a client or language-server timeout returns a failed call; it never changes collection scope or reports a timed-out collection as complete.
+`lsp_count_text_matches` measures a common identifier before semantic
+verification. Compact tools omit operational metrics; detailed reference calls
+retain timing, semantic request, concurrency, and memory observations. The
+server applies no hidden candidate cap.
 
 ## Memory Management
 
-Language-server clients and reusable reference sets are released automatically using idle timeout, TTL, and LRU policies. These policies affect reuse only; they do not cap a collection being computed.
-
-Environment variables:
-
-- `SEMANTIC_JS_MCP_CLIENT_IDLE_TIMEOUT_MS` default `60000`
-- `SEMANTIC_JS_MCP_CLIENT_MINIMUM_EVICTION_AGE_MS` default `15000`
-- `SEMANTIC_JS_MCP_MAXIMUM_ACTIVE_CLIENTS` default `4`
-- `SEMANTIC_JS_MCP_REFERENCE_SET_TTL_MS` default `300000`
-- `SEMANTIC_JS_MCP_MAXIMUM_REFERENCE_SETS` default `12`
-- `SEMANTIC_JS_MCP_MAXIMUM_CHANGED_REFERENCE_SET_MARKERS` default `24`
-- `SEMANTIC_JS_MCP_MAXIMUM_CACHED_REFERENCE_LOCATIONS` default `50000`
-- `SEMANTIC_JS_MCP_DEFAULT_REFERENCE_PAGE_SIZE` default `100`
-- `SEMANTIC_JS_MCP_CROSS_WORKSPACE_CONCURRENCY` default `6`
-
-A single reference collection may exceed the cache-location budget so it can still be paged. Older collections are evicted first.
+Language-server clients and reusable reference sets use idle timeout, TTL, and
+LRU policies. These policies govern reuse; they never impose a hidden limit on
+the collection in progress. Configuration literals and defaults are listed in
+the generated [protocol reference](skills/semantic-navigation/references/protocol-literals.md).
 
 ## Verification
 
