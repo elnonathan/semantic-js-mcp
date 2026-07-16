@@ -19,13 +19,14 @@ npm run doctor
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:lifecycle
 npm run smoke:release
 npm run smoke:evaluation
 npm run smoke:matrix
 npm run smoke:distribution
 ```
 
-Run `npm run benchmark` for changes that affect repository scanning, reference verification, caching, lifecycle, or memory.
+Run `npm run benchmark` for changes that affect repository scanning, reference verification, caching, lifecycle, or memory. Provider disposal changes should also run `npm run benchmark:lifecycle-memory`; it uses explicit garbage collection and POSIX process metrics, remains separate from the deterministic release gate, and reports its measurement scope.
 
 ## Source Of Truth
 
@@ -56,13 +57,14 @@ npm run check:runtime
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:lifecycle
 npm run smoke:release
 npm run smoke:evaluation
 npm run smoke:matrix
 npm run smoke:distribution
 ```
 
-Also run `npm run benchmark` when collection cost or memory could change. Run `npm run doctor` when changing runtime resolution, provider startup, the CLI, or diagnostic trust. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
+Also run `npm run benchmark` when collection cost or memory could change, and `npm run benchmark:lifecycle-memory` when provider disposal behavior changes. Run `npm run doctor` when changing runtime resolution, provider startup, the CLI, or diagnostic trust. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
 
 `npm run release:verify` executes the complete local release gate and reports every check in one machine-readable result. It does not publish, tag, or modify an installed plugin.
 

@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Add a deterministic semantic-evidence usability status to named counts and audits, with explicit follow-up reasons for incomplete collection or ambiguous definition selection.
+- Add a repeated post-disposal memory benchmark that separates MCP heap, MCP resident memory, and child-provider resident memory under an explicitly scoped measurement method.
+
+### Fixed
+
+- Recover with fresh language-server and Vue tsserver clients after an initialized provider exits, while settling pending requests and diagnostics without leaving timeout handles active.
 
 ## [0.9.0] - 2026-07-16
 

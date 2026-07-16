@@ -1,0 +1,53 @@
+export const LIFECYCLE_MEMORY_STATUS = Object.freeze({BLOCKED: "blocked", FAIL: "fail", PASS: "pass"});
+
+export const LIFECYCLE_MEMORY_EXIT_CODE = Object.freeze({PASS: 0, FAIL: 1, BLOCKED: 2});
+
+export const LIFECYCLE_MEMORY_REASON = Object.freeze({
+  PLATFORM_UNSUPPORTED: "provider-rss-observation-requires-posix-ps",
+  PROCESS_COMMAND_UNAVAILABLE: "posix-ps-command-unavailable",
+  PROCESS_OBSERVATION_UNAVAILABLE: "provider-rss-observation-unavailable",
+});
+
+export const LIFECYCLE_MEMORY_METHOD = Object.freeze({
+  GARBAGE_COLLECTION: "explicit-before-each-mcp-snapshot",
+  PROVIDER_MEMORY: "posix-ps-rss",
+  ALLOCATOR_RETENTION: "rss-minus-v8-heap-total-proxy-includes-native-memory",
+});
+
+export const LIFECYCLE_MEMORY_FIELD = Object.freeze({
+  HEAP_USED_BYTES: "heapUsedBytes",
+  RESIDENT_SET_BYTES: "residentSetBytes",
+  SYNTHETIC_VALUE: "value",
+});
+
+export const LIFECYCLE_MEMORY_OBSERVER = Object.freeze({
+  INTERVAL_MILLISECONDS: 100,
+  PREFIX: "semantic-js-mcp-memory:",
+});
+
+const MEBIBYTE = 1024 * 1024;
+
+export const LIFECYCLE_MEMORY_BENCHMARK = Object.freeze({
+  CYCLES: 12,
+  WARMUP_CYCLES: 2,
+  COMPARISON_WINDOW: 3,
+  CLIENT_IDLE_TIMEOUT_MS: 300,
+  OBSERVATION_ATTEMPTS: 200,
+  OBSERVATION_INTERVAL_MS: 50,
+  HEAP_MEDIAN_GROWTH_MINIMUM_BYTES: 4 * MEBIBYTE,
+  HEAP_MEDIAN_GROWTH_RATIO: 0.15,
+  HEAP_SLOPE_MINIMUM_BYTES_PER_CYCLE: 256 * 1024,
+  HEAP_SLOPE_RATIO_PER_CYCLE: 0.01,
+  RSS_MEDIAN_GROWTH_MINIMUM_BYTES: 16 * MEBIBYTE,
+  RSS_MEDIAN_GROWTH_RATIO: 0.15,
+  RSS_SLOPE_MINIMUM_BYTES_PER_CYCLE: MEBIBYTE,
+  RSS_SLOPE_RATIO_PER_CYCLE: 0.01,
+  SYNTHETIC_SAMPLE_COUNT: 10,
+  SYNTHETIC_BASE_BYTES: 1_000,
+  SYNTHETIC_STABLE_VARIATION_BYTES: 2,
+  SYNTHETIC_GROWTH_BYTES_PER_CYCLE: 50,
+  SYNTHETIC_MEDIAN_LIMIT_BYTES: 100,
+  SYNTHETIC_SLOPE_LIMIT_BYTES: 10,
+});
+
+export const LIFECYCLE_MEMORY_SUPPORTED_PLATFORMS = Object.freeze(["darwin", "linux"]);

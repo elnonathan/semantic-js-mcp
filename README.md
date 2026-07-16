@@ -66,9 +66,10 @@ npm run doctor
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:lifecycle
 ```
 
-Run `npm run benchmark` after changes to scanning, references, caching, lifecycle, or memory. Normal analysis is local and read-only; it does not require network access after dependencies are installed.
+Run `npm run benchmark` after changes to scanning, references, caching, lifecycle, or memory. Provider disposal changes can also be characterized with `npm run benchmark:lifecycle-memory`; its output declares the garbage-collection and platform measurement method. Normal analysis is local and read-only; it does not require network access after dependencies are installed.
 
 For an MCP host that accepts a direct stdio configuration, point it at the checked-out server using an absolute path:
 
@@ -209,6 +210,7 @@ npm run doctor
 npm run smoke
 npm run smoke:ci
 npm run smoke:vue
+npm run smoke:lifecycle
 npm run smoke:distribution
 ```
 

@@ -48,6 +48,7 @@ npm run check:runtime
 npm run smoke:ci
 npm run smoke
 npm run smoke:vue
+npm run smoke:lifecycle
 npm run smoke:distribution
 ```
 

@@ -12,6 +12,7 @@ import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
+import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -65,6 +66,8 @@ import {
 } from "./protocol.mjs";
 
 const PLUGIN_ROOT = PACKAGE_ROOT;
+const PROCESS_EVENT = Object.freeze({DATA: "data", EXIT: "exit"});
+const PROCESS_SIGNAL = Object.freeze({INTERRUPT: "SIGINT", TERMINATE: "SIGTERM"});
 const CONFIGURED_PROCESS_CWD = process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD]
   ? path.resolve(process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD])
   : undefined;
@@ -348,10 +351,10 @@ function runProcess(command, args, cwd) {
     });
     const stdout = [];
     const stderr = [];
-    child.stdout.on("data", (chunk) => stdout.push(chunk));
-    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    child.stdout.on(PROCESS_EVENT.DATA, (chunk) => stdout.push(chunk));
+    child.stderr.on(PROCESS_EVENT.DATA, (chunk) => stderr.push(chunk));
     child.on(NODE_EVENT.ERROR, reject);
-    child.on("exit", (code) => {
+    child.on(PROCESS_EVENT.EXIT, (code) => {
       if (code === 0 || code === 1) resolve(Buffer.concat(stdout).toString("utf8"));
       else reject(new Error(`${command} exited ${code}: ${Buffer.concat(stderr).toString("utf8").trim()}`));
     });
@@ -472,12 +475,18 @@ function languageServerEntry(kind) {
 }
 
 class TsserverBridge {
-  constructor(root, tsdk, enableVuePlugin = false) {
+  constructor(root, tsdk, enableVuePlugin = false, onExit) {
     this.root = root;
     this.nextId = 1;
-    this.pending = new Map();
+    this.pending = new PendingRequestRegistry({
+      timeoutMilliseconds: REQUEST_TIMEOUT_MS,
+      timeoutMessage: (command) => `tsserver request timed out: ${command}`,
+    });
     this.openFiles = new Set();
     this.buffer = Buffer.alloc(0);
+    this.onExit = onExit;
+    this.closed = false;
+    this.processError = undefined;
     const args = [path.join(tsdk, "tsserver.js"), "--useInferredProjectPerProjectRoot", "--disableAutomaticTypingAcquisition"];
     if (enableVuePlugin) {
       args.push("--globalPlugins", "@vue/typescript-plugin", "--pluginProbeLocations", runtimeNodeModules(), "--allowLocalPluginLoads");
@@ -487,16 +496,33 @@ class TsserverBridge {
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    this.process.stdout.on("data", (chunk) => this.onData(chunk));
-    this.process.stderr.on("data", (chunk) => {
+    process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] starting bridge ${this.process.pid}\n`);
+    this.process.stdout.on(PROCESS_EVENT.DATA, (chunk) => this.onData(chunk));
+    this.process.stderr.on(PROCESS_EVENT.DATA, (chunk) => {
       const message = chunk.toString().trim();
       if (message) process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${message}\n`);
     });
-    this.process.on("exit", (code, signal) => {
-      const error = new Error(`Vue tsserver bridge exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`);
-      for (const pending of this.pending.values()) pending.reject(error);
-      this.pending.clear();
+    this.process.on(NODE_EVENT.ERROR, (error) => {
+      this.processError = error;
+      process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${error.message}\n`);
     });
+    this.process.on(PROCESS_EVENT.EXIT, (code, signal) => {
+      this.handleBridgeProcessFailure(
+        this.processError || new Error(`Vue tsserver bridge exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`),
+      );
+    });
+    this.process.on(NODE_EVENT.CLOSE, (code, signal) => {
+      this.handleBridgeProcessFailure(
+        this.processError || new Error(`Vue tsserver bridge exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`),
+      );
+    });
+  }
+
+  handleBridgeProcessFailure(error) {
+    if (!this.process) return;
+    this.process = undefined;
+    this.rejectPending(error);
+    if (!this.closed) this.onExit?.(this);
   }
 
   onData(chunk) {
@@ -518,10 +544,8 @@ class TsserverBridge {
       try {
         const message = JSON.parse(body);
         if (message.type === "response") {
-          const pending = this.pending.get(message.request_seq);
+          const pending = this.pending.take(message.request_seq);
           if (!pending) continue;
-          clearTimeout(pending.timer);
-          this.pending.delete(message.request_seq);
           if (message.success === false) pending.reject(new Error(message.message || "tsserver request failed"));
           else pending.resolve(message.body);
         }
@@ -532,17 +556,17 @@ class TsserverBridge {
   }
 
   send(command, args, expectResponse = true) {
+    if (this.closed || !this.process?.stdin.writable) throw new Error("Vue tsserver bridge is not writable");
     const seq = this.nextId++;
     const message = JSON.stringify({seq, type: "request", command, arguments: args});
-    this.process.stdin.write(`${message}\n`);
-    if (!expectResponse) return Promise.resolve(undefined);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(seq);
-        reject(new Error(`tsserver request timed out: ${command}`));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(seq, {resolve, reject, timer});
-    });
+    const response = expectResponse ? this.pending.create(seq, command) : Promise.resolve(undefined);
+    try {
+      this.process.stdin.write(`${message}\n`);
+    } catch (error) {
+      if (!expectResponse) return Promise.reject(error);
+      this.pending.take(seq)?.reject(error);
+    }
+    return response;
   }
 
   async request(command, args) {
@@ -554,25 +578,37 @@ class TsserverBridge {
     return this.send(command, args);
   }
 
-  close() {
-    if (!this.process.killed) this.process.kill("SIGTERM");
+  rejectPending(error) {
+    this.pending.rejectAll(error);
+  }
+
+  close(reason = new Error("Vue tsserver bridge closed")) {
+    this.closed = true;
+    this.rejectPending(reason);
+    if (this.process && !this.process.killed) this.process.kill(PROCESS_SIGNAL.TERMINATE);
   }
 }
 
 class LspClient {
-  constructor(root, kind) {
+  constructor(root, kind, onExit) {
     this.root = root;
     this.kind = kind;
     this.process = undefined;
     this.buffer = Buffer.alloc(0);
     this.nextId = 1;
-    this.pending = new Map();
+    this.pending = new PendingRequestRegistry({
+      timeoutMilliseconds: REQUEST_TIMEOUT_MS,
+      timeoutMessage: (method) => `LSP request timed out: ${method}`,
+    });
     this.documents = new Map();
     this.diagnosticsCache = new Map();
     this.diagnosticWaiters = new Map();
     this.diagnosticAcquisitions = new Map();
     this.serverCapabilities = {};
     this.tsserverBridge = undefined;
+    this.onExit = onExit;
+    this.closed = false;
+    this.processError = undefined;
     this.ready = this.start();
   }
 
@@ -587,21 +623,30 @@ class LspClient {
       env: {...process.env, PATH: `${path.join(runtimeNodeModules(), ".bin")}${path.delimiter}${process.env.PATH || ""}`},
       stdio: ["pipe", "pipe", "pipe"],
     });
-    process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] starting in ${this.root}\n`);
-    this.process.stdout.on("data", (chunk) => this.onData(chunk));
-    this.process.stderr.on("data", (chunk) => {
+    process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] starting provider ${this.process.pid}\n`);
+    this.process.stdout.on(PROCESS_EVENT.DATA, (chunk) => this.onData(chunk));
+    this.process.stderr.on(PROCESS_EVENT.DATA, (chunk) => {
       const message = chunk.toString().trim();
       if (message) process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] ${message}\n`);
     });
-    this.process.on("exit", (code, signal) => {
+    this.process.on(NODE_EVENT.ERROR, (error) => {
+      this.processError = error;
+      process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] ${error.message}\n`);
+    });
+    this.process.on(PROCESS_EVENT.EXIT, (code, signal) => {
       process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})\n`);
-      const error = new Error(`${this.kind} language server exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`);
-      for (const pending of this.pending.values()) pending.reject(error);
-      this.pending.clear();
+      this.handleLanguageServerProcessFailure(
+        this.processError || new Error(`${this.kind} language server exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`),
+      );
+    });
+    this.process.on(NODE_EVENT.CLOSE, (code, signal) => {
+      this.handleLanguageServerProcessFailure(
+        this.processError || new Error(`${this.kind} language server exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`),
+      );
     });
 
     const tsdk = findTsdk(this.root);
-    if (this.kind === LANGUAGE_ID.VUE) this.tsserverBridge = new TsserverBridge(this.root, tsdk, true);
+    if (this.kind === LANGUAGE_ID.VUE) this.createTsserverBridge();
     const initializeResult = await this.request(
       "initialize",
       {
@@ -632,6 +677,16 @@ class LspClient {
     this.notify("initialized", {});
   }
 
+  handleLanguageServerProcessFailure(error) {
+    if (!this.process) return;
+    this.process = undefined;
+    this.rejectPending(error);
+    this.invalidateAllDiagnostics(error);
+    this.tsserverBridge?.close(error);
+    this.tsserverBridge = undefined;
+    if (!this.closed) this.onExit?.(this);
+  }
+
   onData(chunk) {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     while (true) {
@@ -658,10 +713,8 @@ class LspClient {
 
   onMessage(message) {
     if (message.id !== undefined && (message.result !== undefined || message.error !== undefined) && !message.method) {
-      const pending = this.pending.get(message.id);
+      const pending = this.pending.take(message.id);
       if (!pending) return;
-      clearTimeout(pending.timer);
-      this.pending.delete(message.id);
       if (message.error) pending.reject(new Error(message.error.message || JSON.stringify(message.error)));
       else pending.resolve(message.result);
       return;
@@ -698,8 +751,8 @@ class LspClient {
     if (message.method === "tsserver/request") {
       const params = Array.isArray(message.params?.[0]) ? message.params[0] : message.params;
       const [requestId, command, args] = params || [];
-      void this.tsserverBridge
-        ?.request(command, args)
+      void this.rawTsserver()
+        .request(command, args)
         .then((result) => this.notify("tsserver/response", [[requestId, result]]))
         .catch((error) => {
           process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${error.message}\n`);
@@ -730,14 +783,13 @@ class LspClient {
   request(method, params, duringInitialization = false) {
     if (!duringInitialization && !this.process) throw new Error("Language server has not started");
     const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`LSP request timed out: ${method}`));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, {resolve, reject, timer});
+    const response = this.pending.create(id, method);
+    try {
       this.send({id, method, params});
-    });
+    } catch (error) {
+      this.pending.take(id)?.reject(error);
+    }
+    return response;
   }
 
   notify(method, params) {
@@ -746,6 +798,10 @@ class LspClient {
 
   respond(id, result) {
     this.send({id, result});
+  }
+
+  rejectPending(error) {
+    this.pending.rejectAll(error);
   }
 
   async syncDocument(file) {
@@ -772,37 +828,44 @@ class LspClient {
   }
 
   rawTsserver() {
-    if (!this.tsserverBridge) {
-      this.tsserverBridge = new TsserverBridge(this.root, findTsdk(this.root), this.kind === LANGUAGE_ID.VUE);
-    }
-    return this.tsserverBridge;
+    if (this.closed || !this.process) throw new Error(`${this.kind} language server is unavailable`);
+    return this.tsserverBridge || this.createTsserverBridge();
   }
 
-  clearDiagnosticWaiters(uri) {
+  createTsserverBridge() {
+    const bridge = new TsserverBridge(this.root, findTsdk(this.root), this.kind === LANGUAGE_ID.VUE, (exitedBridge) => {
+      if (this.tsserverBridge === exitedBridge) this.tsserverBridge = undefined;
+    });
+    this.tsserverBridge = bridge;
+    return bridge;
+  }
+
+  clearDiagnosticWaiters(uri, error) {
     const waiters = this.diagnosticWaiters.get(uri) || [];
     this.diagnosticWaiters.delete(uri);
     for (const waiter of waiters) {
       clearTimeout(waiter.timer);
-      waiter.resolve(undefined);
+      if (error) waiter.reject(error);
+      else waiter.resolve(undefined);
     }
   }
 
-  invalidateDiagnostics(uri) {
+  invalidateDiagnostics(uri, error) {
     this.diagnosticsCache.delete(uri);
-    this.clearDiagnosticWaiters(uri);
+    this.clearDiagnosticWaiters(uri, error);
     this.diagnosticAcquisitions.delete(uri);
   }
 
-  invalidateAllDiagnostics() {
+  invalidateAllDiagnostics(error) {
     const uris = new Set([...this.diagnosticsCache.keys(), ...this.diagnosticWaiters.keys(), ...this.diagnosticAcquisitions.keys()]);
-    for (const uri of uris) this.invalidateDiagnostics(uri);
+    for (const uri of uris) this.invalidateDiagnostics(uri, error);
   }
 
   waitForPublishedDiagnostics(uri, documentVersion) {
     const cached = this.diagnosticsCache.get(uri);
     if (cached?.reportedDocumentVersion === documentVersion) return Promise.resolve(cached);
-    return new Promise((resolve) => {
-      const waiter = {documentVersion, resolve, timer: undefined};
+    return new Promise((resolve, reject) => {
+      const waiter = {documentVersion, resolve, reject, timer: undefined};
       waiter.timer = setTimeout(() => {
         const waiters = this.diagnosticWaiters.get(uri) || [];
         const remaining = waiters.filter((candidate) => candidate !== waiter);
@@ -899,21 +962,38 @@ class LspClient {
   }
 
   close() {
+    this.closed = true;
+    const error = new Error(`${this.kind} language server client closed`);
+    this.rejectPending(error);
     this.documents.clear();
-    this.invalidateAllDiagnostics();
-    this.tsserverBridge?.close();
-    if (this.process && !this.process.killed) this.process.kill("SIGTERM");
+    this.invalidateAllDiagnostics(error);
+    this.tsserverBridge?.close(error);
+    this.tsserverBridge = undefined;
+    if (this.process && !this.process.killed) this.process.kill(PROCESS_SIGNAL.TERMINATE);
   }
 }
 
 const clients = new Map();
 
 function clientIsBusy(client) {
-  return client.pending.size > 0 || client.diagnosticWaiters.size > 0 || (client.tsserverBridge?.pending.size || 0) > 0;
+  const diagnosticAcquisitionActive = [...client.diagnosticAcquisitions.values()].some((acquisition) => !acquisition.completed);
+  return (
+    client.pending.size > 0 ||
+    client.diagnosticWaiters.size > 0 ||
+    diagnosticAcquisitionActive ||
+    (client.tsserverBridge?.pending.size || 0) > 0
+  );
 }
 
 function closeClientEntry(key, entry) {
+  if (clients.get(key) !== entry) return;
+  clients.delete(key);
   entry.client.close();
+}
+
+function removeExitedClient(key, client) {
+  const entry = clients.get(key);
+  if (entry?.client !== client) return;
   clients.delete(key);
 }
 
@@ -937,7 +1017,8 @@ function getOrCreateClient(key, root, kind) {
   const now = Date.now();
   let entry = clients.get(key);
   if (!entry) {
-    entry = {client: new LspClient(root, kind), lastUsedAt: now};
+    const client = new LspClient(root, kind, (exitedClient) => removeExitedClient(key, exitedClient));
+    entry = {client, lastUsedAt: now};
     clients.set(key, entry);
   } else {
     entry.lastUsedAt = now;
@@ -1366,7 +1447,7 @@ function contentFingerprint(file) {
   return new Promise((resolve, reject) => {
     const hash = createHash(FINGERPRINT_ALGORITHM.SHA_256);
     const stream = createReadStream(file);
-    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on(PROCESS_EVENT.DATA, (chunk) => hash.update(chunk));
     stream.on("end", () => resolve(hash.digest("hex")));
     stream.on(NODE_EVENT.ERROR, (error) => {
       if (error?.code === "ENOENT") resolve(null);
@@ -2945,8 +3026,8 @@ async function shutdown() {
   await server.close().catch(() => undefined);
 }
 
-process.on("SIGINT", () => void shutdown().finally(() => process.exit(0)));
-process.on("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
+process.on(PROCESS_SIGNAL.INTERRUPT, () => void shutdown().finally(() => process.exit(0)));
+process.on(PROCESS_SIGNAL.TERMINATE, () => void shutdown().finally(() => process.exit(0)));
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
