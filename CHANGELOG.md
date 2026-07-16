@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-16
+
 ### Added
 
 - Add a deterministic semantic-evidence usability status to named counts and audits, with explicit follow-up reasons for incomplete collection or ambiguous definition selection.
