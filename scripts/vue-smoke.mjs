@@ -24,12 +24,20 @@ import {
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_VUE_PACKAGE_NAME = "vue";
 const FIXTURE_VUE_VERSION = "3.5.0";
+const FIXTURE_ALIASED_COMPONENT_FILE_NAME = "AliasedPanel.vue";
+const FIXTURE_ALIASED_COMPONENT_LOCAL_NAME = "RenamedPanel";
+const COMPONENT_POSITION = Object.freeze({
+  CHILD_TEMPLATE: Object.freeze({line: 12, column: 4}),
+  ALIASED_IMPORT: Object.freeze({line: 3, column: 8}),
+  ALIASED_TEMPLATE: Object.freeze({line: 13, column: 4}),
+});
 const workspace = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-vue-smoke-"));
 const src = path.join(workspace, "src");
 const vuePackage = path.join(workspace, "node_modules", FIXTURE_VUE_PACKAGE_NAME);
 const component = path.join(src, "CounterPanel.vue");
 const diagnosticComponent = path.join(src, "DiagnosticPanel.vue");
 const childComponent = path.join(src, "ChildPanel.vue");
+const aliasedComponent = path.join(src, FIXTURE_ALIASED_COMPONENT_FILE_NAME);
 const unrelatedComponent = path.join(src, "UnrelatedPanel.vue");
 await mkdir(src, {recursive: true});
 await mkdir(vuePackage, {recursive: true});
@@ -70,12 +78,19 @@ await writeFile(
     "<template><span>{{ label }}</span></template>",
   ].join("\n"),
 );
+await writeFile(
+  aliasedComponent,
+  ['<script setup lang="ts">', "defineProps<{message: string}>();", "</script>", "<template><span>{{ message }}</span></template>"].join(
+    "\n",
+  ),
+);
 await writeFile(unrelatedComponent, '<script setup lang="ts">\nconst unrelated = true;\n</script>\n<template>{{ unrelated }}</template>');
 await writeFile(
   component,
   [
     '<script setup lang="ts">',
     'import ChildPanel from "./ChildPanel.vue";',
+    `import ${FIXTURE_ALIASED_COMPONENT_LOCAL_NAME} from "./${FIXTURE_ALIASED_COMPONENT_FILE_NAME}";`,
     "const count = 0;",
     "function increment(value: number): number {",
     "  return value + 1;",
@@ -85,6 +100,7 @@ await writeFile(
     "</script>",
     "<template>",
     '  <ChildPanel label="Count" />',
+    `  <${FIXTURE_ALIASED_COMPONENT_LOCAL_NAME} message="Aliased" />`,
     "  <button>{{ nextCount }}</button>",
     "</template>",
   ].join("\n"),
@@ -162,7 +178,7 @@ try {
   }
   const definition = await client.callTool({
     name: TOOL.DEFINITION,
-    arguments: {file: component, root: workspace, line: 11, column: 4},
+    arguments: {file: component, root: workspace, ...COMPONENT_POSITION.CHILD_TEMPLATE},
   });
   if (definition.isError) throw new Error(definition.content?.[0]?.text || "Vue template component definition failed");
   const supportedMethods = new Set([
@@ -175,6 +191,62 @@ try {
   }
   if (!definition.structuredContent?.result?.definitions?.some((item) => path.basename(item.file) === path.basename(childComponent))) {
     throw new Error("Vue template component did not resolve to the imported SFC");
+  }
+
+  const aliasedImportDefinition = await client.callTool({
+    name: TOOL.DEFINITION,
+    arguments: {file: component, root: workspace, ...COMPONENT_POSITION.ALIASED_IMPORT},
+  });
+  if (aliasedImportDefinition.isError) {
+    throw new Error(aliasedImportDefinition.content?.[0]?.text || "Vue aliased import definition failed");
+  }
+  if (
+    !aliasedImportDefinition.structuredContent?.result?.definitions?.some(
+      (item) => path.basename(item.file) === path.basename(aliasedComponent),
+    )
+  ) {
+    throw new Error("Vue aliased import did not resolve to its SFC");
+  }
+
+  const aliasedTemplateDefinition = await client.callTool({
+    name: TOOL.DEFINITION,
+    arguments: {file: component, root: workspace, ...COMPONENT_POSITION.ALIASED_TEMPLATE},
+  });
+  if (aliasedTemplateDefinition.isError) {
+    throw new Error(aliasedTemplateDefinition.content?.[0]?.text || "Vue aliased template definition failed");
+  }
+  if (
+    !aliasedTemplateDefinition.structuredContent?.result?.definitions?.some(
+      (item) => path.basename(item.file) === path.basename(aliasedComponent),
+    )
+  ) {
+    throw new Error("Vue aliased template component did not resolve to its SFC");
+  }
+
+  const aliasedNamedAudit = await client.callTool({
+    name: TOOL.AUDIT_NAMED_SYMBOL,
+    arguments: {
+      root: workspace,
+      symbol: FIXTURE_ALIASED_COMPONENT_LOCAL_NAME,
+      fileHint: FIXTURE_ALIASED_COMPONENT_FILE_NAME,
+    },
+  });
+  if (aliasedNamedAudit.isError) {
+    throw new Error(aliasedNamedAudit.content?.[0]?.text || "Vue aliased named audit failed");
+  }
+  const aliasedFileHintResolution = aliasedNamedAudit.structuredContent?.result?.fileHintResolution;
+  if (!aliasedFileHintResolution || aliasedFileHintResolution.textMatchesResolvingToFileFilter < 1) {
+    throw new Error("Vue aliased named audit did not verify the local binding to its SFC");
+  }
+  if (aliasedFileHintResolution.accountingStatus !== ACCOUNTING_STATUS.COMPLETE) {
+    throw new Error("Vue aliased named audit did not account for every local-name occurrence");
+  }
+  if (
+    !aliasedFileHintResolution.sourcePositionForAudit?.definitions?.some(
+      (item) => path.basename(item.file) === path.basename(aliasedComponent),
+    )
+  ) {
+    throw new Error("Vue aliased named audit did not return a reusable binding position");
   }
 
   const ambiguousCount = await client.callTool({
@@ -303,6 +375,8 @@ try {
       {
         vueDocumentSymbols: "ok",
         vueTemplateComponentDefinition: "ok",
+        vueAliasedComponentDefinition: "ok",
+        vueAliasedNamedBindingResolution: "ok",
         vueNamedDefinitionSelection: "ok",
         vueFileHintBindingResolution: "ok",
         vueSharedDiagnosticAcquisition: "ok",
