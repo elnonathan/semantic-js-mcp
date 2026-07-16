@@ -16,7 +16,7 @@ For each file, it identifies the owning workspace and uses the corresponding Typ
 
 ## Project Status
 
-Version `0.8.1` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
+Version `0.9.0` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
 
 ## Installation
 
