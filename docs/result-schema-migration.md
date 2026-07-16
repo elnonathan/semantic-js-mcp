@@ -48,3 +48,9 @@ Schema 6 diagnostic evidence may use
 `current-document-snapshot-confirmed` for a pull result or
 `document-content-changed-during-diagnostic-acquisition` when the source no
 longer matches the analyzed snapshot.
+
+Diagnostic results include one `provenance` object with `provider` and
+`documentLanguage`. Each diagnostic item includes `embeddedRegion` and
+`embeddedLanguage`. The finite values are generated in the protocol reference;
+`unknown` means the source range or declared language did not establish a
+supported classification.

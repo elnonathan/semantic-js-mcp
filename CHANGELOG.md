@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Report whether named-symbol filtering selected zero, one, or multiple exact definitions, and recommend only continuation tools supported by the returned evidence.
 - Verify import and usage bindings against `fileHint` during named audits without treating the hinted filename as a declaration.
 - Share concurrent diagnostic acquisition, negotiate provider pull support, and reject evidence when file content changes during acquisition.
+- Report the owning diagnostic provider and document language once per result, with source region and embedded language on each diagnostic when its range establishes them.
 
 ## [0.8.1] - 2026-07-15
 

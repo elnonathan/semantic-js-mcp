@@ -15,6 +15,9 @@ import {
   DEFINITION_MATCH,
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
+  DIAGNOSTIC_LANGUAGE,
+  DIAGNOSTIC_PROVIDER,
+  DIAGNOSTIC_REGION,
   EVIDENCE_STATUS,
   DIAGNOSTIC_FRESHNESS,
   ENVIRONMENT_VARIABLE,
@@ -758,8 +761,19 @@ try {
   );
   const changedReport = changedDiagnostics.result.diagnosticsForCurrentDocument || changedDiagnostics.result.unconfirmedDiagnosticReport;
   assert(
+    changedDiagnostics.result.provenance.provider === DIAGNOSTIC_PROVIDER.TYPESCRIPT_LANGUAGE_SERVER &&
+      changedDiagnostics.result.provenance.documentLanguage === DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
+    "TypeScript diagnostics omitted provider or document-language provenance",
+  );
+  assert(
     changedReport.items.some((item) => item.message.includes("missingAfterDiagnosticChange")),
     "Changed diagnostics did not report the introduced error",
+  );
+  assert(
+    changedReport.items.every(
+      (item) => item.embeddedRegion === DIAGNOSTIC_REGION.DOCUMENT && item.embeddedLanguage === DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
+    ),
+    "TypeScript diagnostics did not identify the containing document language",
   );
   if (changedDiagnostics.result.evidence.status === EVIDENCE_STATUS.UNTRUSTED) {
     assert(changedDiagnostics.result.diagnosticsForCurrentDocument === null, "Untrusted changed diagnostics appeared as verified evidence");
@@ -797,6 +811,7 @@ try {
         diagnosticVersionReporting: "ok",
         sharedDiagnosticAcquisition: "ok",
         diagnosticContentFreshness: "ok",
+        diagnosticProvenance: "ok",
         automaticMemoryCleanup: "ok",
         ambiguousPublicFields: "absent",
       },

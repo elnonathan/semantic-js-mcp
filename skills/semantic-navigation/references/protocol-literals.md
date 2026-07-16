@@ -22,6 +22,18 @@ Result schema version: `6`
 - `lsp_reference_page`
 - `lsp_unresolved_reference_page`
 
+## Common Values
+
+- `unknown`
+
+## Search Scope
+
+- `document`
+
+## Runtime Packages
+
+- `typescript`
+
 ## Tool Descriptions
 
 - `lsp_document_symbols`: `Returns declarations and nested members for one file. Use lsp_definition or lsp_audit_symbol with an exact position for semantic identity.`
@@ -97,6 +109,8 @@ Result schema version: `6`
 
 - `js`
 - `jsx`
+- `ts`
+- `tsx`
 
 ## Collection Status
 
@@ -153,6 +167,36 @@ Result schema version: `6`
 - `version-not-reported-by-language-server`
 - `different-document-version`
 - `not-reported-for-current-document`
+
+## Diagnostic Provider
+
+- `typescript-language-server`
+- `vue-language-server`
+- `unknown`
+
+## Diagnostic Region
+
+- `document`
+- `script`
+- `script-setup`
+- `template`
+- `style`
+- `custom-block`
+- `unknown`
+
+## Diagnostic Language
+
+- `typescript`
+- `typescriptreact`
+- `javascript`
+- `javascriptreact`
+- `vue`
+- `html`
+- `pug`
+- `css`
+- `scss`
+- `less`
+- `unknown`
 
 ## Diagnostic Severity
 

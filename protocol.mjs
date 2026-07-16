@@ -125,9 +125,53 @@ export const LANGUAGE_ID = Object.freeze({
   VUE: "vue",
 });
 
+export const COMMON_VALUE = Object.freeze({
+  UNKNOWN: "unknown",
+});
+
+export const SEARCH_SCOPE = Object.freeze({
+  DOCUMENT: "document",
+});
+
+export const RUNTIME_PACKAGE = Object.freeze({
+  TYPESCRIPT: "typescript",
+});
+
 export const VUE_SCRIPT_LANGUAGE = Object.freeze({
   JAVASCRIPT: "js",
   JAVASCRIPT_REACT: "jsx",
+  TYPESCRIPT: "ts",
+  TYPESCRIPT_REACT: "tsx",
+});
+
+export const DIAGNOSTIC_PROVIDER = Object.freeze({
+  TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server",
+  VUE_LANGUAGE_SERVER: "vue-language-server",
+  UNKNOWN: COMMON_VALUE.UNKNOWN,
+});
+
+export const DIAGNOSTIC_REGION = Object.freeze({
+  DOCUMENT: SEARCH_SCOPE.DOCUMENT,
+  SCRIPT: "script",
+  SCRIPT_SETUP: "script-setup",
+  TEMPLATE: "template",
+  STYLE: "style",
+  CUSTOM_BLOCK: "custom-block",
+  UNKNOWN: COMMON_VALUE.UNKNOWN,
+});
+
+export const DIAGNOSTIC_LANGUAGE = Object.freeze({
+  TYPESCRIPT: LANGUAGE_ID.TYPESCRIPT,
+  TYPESCRIPT_REACT: LANGUAGE_ID.TYPESCRIPT_REACT,
+  JAVASCRIPT: LANGUAGE_ID.JAVASCRIPT,
+  JAVASCRIPT_REACT: LANGUAGE_ID.JAVASCRIPT_REACT,
+  VUE: LANGUAGE_ID.VUE,
+  HTML: "html",
+  PUG: "pug",
+  CSS: "css",
+  SCSS: "scss",
+  LESS: "less",
+  UNKNOWN: COMMON_VALUE.UNKNOWN,
 });
 
 export const FORBIDDEN_PUBLIC_FIELD = Object.freeze([

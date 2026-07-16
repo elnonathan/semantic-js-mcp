@@ -200,6 +200,8 @@ Diagnostics clear their cache on `didChange` and report the analyzed document ve
 
 The server prefers diagnostic pull when the owning provider advertises it, falls back to push notifications, and shares concurrent requests for the same document snapshot. Push evidence is trusted only when it identifies the current version.
 
+Diagnostic results identify the owning provider and document language. Each item also identifies its containing document or Vue block and embedded language when the reported range establishes them; uncertain provenance remains `unknown`.
+
 Diagnostic severities are preserved literally. If a language server omits severity, the result reports `not-reported`; it is not silently treated as information, warning, or error.
 
 ### CI policy adapter

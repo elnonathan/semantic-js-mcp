@@ -14,18 +14,45 @@ import {
   DEFINITION_RESOLUTION_METHOD,
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
+  DIAGNOSTIC_LANGUAGE,
+  DIAGNOSTIC_PROVIDER,
+  DIAGNOSTIC_REGION,
   EVIDENCE_STATUS,
   TOOL,
 } from "../protocol.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const FIXTURE_VUE_PACKAGE_NAME = "vue";
+const FIXTURE_VUE_VERSION = "3.5.0";
 const workspace = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-vue-smoke-"));
 const src = path.join(workspace, "src");
+const vuePackage = path.join(workspace, "node_modules", FIXTURE_VUE_PACKAGE_NAME);
 const component = path.join(src, "CounterPanel.vue");
+const diagnosticComponent = path.join(src, "DiagnosticPanel.vue");
 const childComponent = path.join(src, "ChildPanel.vue");
 const unrelatedComponent = path.join(src, "UnrelatedPanel.vue");
 await mkdir(src, {recursive: true});
-await writeFile(path.join(workspace, "package.json"), JSON.stringify({private: true, type: "module"}));
+await mkdir(vuePackage, {recursive: true});
+await writeFile(
+  path.join(workspace, "package.json"),
+  JSON.stringify({private: true, type: "module", dependencies: {[FIXTURE_VUE_PACKAGE_NAME]: FIXTURE_VUE_VERSION}}),
+);
+await writeFile(
+  path.join(vuePackage, "package.json"),
+  JSON.stringify({
+    name: FIXTURE_VUE_PACKAGE_NAME,
+    version: FIXTURE_VUE_VERSION,
+    types: "index.d.ts",
+    exports: {".": {types: "./index.d.ts"}},
+  }),
+);
+await writeFile(
+  path.join(vuePackage, "index.d.ts"),
+  [
+    "export type DefineComponent<Props = {}, RawBindings = {}, Data = {}> = unknown;",
+    "export declare function defineComponent<T>(component: T): T;",
+  ].join("\n"),
+);
 await writeFile(
   path.join(workspace, "tsconfig.json"),
   JSON.stringify({
@@ -88,6 +115,18 @@ try {
     vueDiagnosticsResponse.structuredContent?.result?.document,
     "Concurrent Vue diagnostics did not use the same document snapshot",
   );
+  await writeFile(
+    diagnosticComponent,
+    [
+      '<script setup lang="ts">',
+      "const typedValue: string = 1;",
+      "</script>",
+      "<template>{{ missingTemplateValue }}</template>",
+      '<style lang="scss">',
+      ".panel { unknown-property: 1; }",
+      "</style>",
+    ].join("\n"),
+  );
   deepStrictEqual(
     concurrentVueDiagnosticsResponse.structuredContent?.result?.evidence,
     vueDiagnosticsResponse.structuredContent?.result?.evidence,
@@ -100,6 +139,26 @@ try {
     vueDiagnosticsResponse.structuredContent?.result?.evidence?.reason !== DIAGNOSTIC_EVIDENCE_REASON.CURRENT_DOCUMENT_SNAPSHOT_CONFIRMED
   ) {
     throw new Error("Vue diagnostic pull omitted its snapshot-confirmation reason");
+  }
+  const provenanceDiagnostics = await client.callTool({
+    name: TOOL.DIAGNOSTICS,
+    arguments: {file: diagnosticComponent, root: workspace},
+  });
+  if (provenanceDiagnostics.isError) {
+    throw new Error(provenanceDiagnostics.content?.[0]?.text || "Vue diagnostic provenance failed");
+  }
+  const provenanceResult = provenanceDiagnostics.structuredContent?.result;
+  if (
+    provenanceResult?.provenance?.provider !== DIAGNOSTIC_PROVIDER.VUE_LANGUAGE_SERVER ||
+    provenanceResult?.provenance?.documentLanguage !== DIAGNOSTIC_LANGUAGE.VUE
+  ) {
+    throw new Error("Vue diagnostics omitted provider or document-language provenance");
+  }
+  const diagnosticItems = provenanceResult?.diagnosticsForCurrentDocument?.items || [];
+  if (
+    !diagnosticItems.some((item) => item.embeddedRegion === DIAGNOSTIC_REGION.STYLE && item.embeddedLanguage === DIAGNOSTIC_LANGUAGE.SCSS)
+  ) {
+    throw new Error(`Vue diagnostics omitted style/SCSS provenance: ${JSON.stringify(diagnosticItems, null, 2)}`);
   }
   const definition = await client.callTool({
     name: TOOL.DEFINITION,
@@ -248,6 +307,7 @@ try {
         vueFileHintBindingResolution: "ok",
         vueSharedDiagnosticAcquisition: "ok",
         vueDiagnosticPull: "ok",
+        vueDiagnosticProvenance: "ok",
         yamlRepresentation: "ok",
       },
       null,

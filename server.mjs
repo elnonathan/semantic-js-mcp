@@ -14,6 +14,7 @@ import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtime
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
+  COMMON_VALUE,
   CONTENT_FRESHNESS,
   DEFAULT,
   DEFINITION_MATCH,
@@ -21,6 +22,9 @@ import {
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
   DIAGNOSTIC_FRESHNESS,
+  DIAGNOSTIC_LANGUAGE,
+  DIAGNOSTIC_PROVIDER,
+  DIAGNOSTIC_REGION,
   DIAGNOSTIC_SEVERITY,
   EVIDENCE_STATUS,
   ENVIRONMENT_VARIABLE,
@@ -40,10 +44,12 @@ import {
   REFERENCE_DISCOVERY_METHOD,
   REFERENCE_SET_CHANGE_TYPE,
   REQUIRED_RUNTIME_COMPONENT,
+  RUNTIME_PACKAGE,
   RUNTIME_COMMAND,
   RESULT_SCHEMA,
   SERVER_VERSION,
   SIGNATURE_SOURCE,
+  SEARCH_SCOPE,
   TOOL,
   TOOL_DESCRIPTION,
   TOOL_ORDER,
@@ -67,10 +73,12 @@ let vueParsingDependenciesPromise;
 
 function vueParsingDependencies() {
   if (!vueParsingDependenciesPromise) {
-    vueParsingDependenciesPromise = Promise.all([import("@vue/compiler-sfc"), import("typescript")]).then(([compiler, typescript]) => ({
-      parseVueSfc: compiler.parse,
-      ts: typescript.default,
-    }));
+    vueParsingDependenciesPromise = Promise.all([import("@vue/compiler-sfc"), import(RUNTIME_PACKAGE.TYPESCRIPT)]).then(
+      ([compiler, typescript]) => ({
+        parseVueSfc: compiler.parse,
+        ts: typescript.default,
+      }),
+    );
   }
   return vueParsingDependenciesPromise;
 }
@@ -138,6 +146,21 @@ const symbolKinds = [
   "TypeParameter",
 ];
 const diagnosticSeverities = Object.values(DIAGNOSTIC_SEVERITY);
+const diagnosticProviders = Object.freeze({
+  [LANGUAGE_ID.TYPESCRIPT]: DIAGNOSTIC_PROVIDER.TYPESCRIPT_LANGUAGE_SERVER,
+  [LANGUAGE_ID.VUE]: DIAGNOSTIC_PROVIDER.VUE_LANGUAGE_SERVER,
+});
+const vueEmbeddedLanguages = Object.freeze({
+  [VUE_SCRIPT_LANGUAGE.TYPESCRIPT]: DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
+  [VUE_SCRIPT_LANGUAGE.TYPESCRIPT_REACT]: DIAGNOSTIC_LANGUAGE.TYPESCRIPT_REACT,
+  [VUE_SCRIPT_LANGUAGE.JAVASCRIPT]: DIAGNOSTIC_LANGUAGE.JAVASCRIPT,
+  [VUE_SCRIPT_LANGUAGE.JAVASCRIPT_REACT]: DIAGNOSTIC_LANGUAGE.JAVASCRIPT_REACT,
+  [DIAGNOSTIC_LANGUAGE.HTML]: DIAGNOSTIC_LANGUAGE.HTML,
+  [DIAGNOSTIC_LANGUAGE.PUG]: DIAGNOSTIC_LANGUAGE.PUG,
+  [DIAGNOSTIC_LANGUAGE.CSS]: DIAGNOSTIC_LANGUAGE.CSS,
+  [DIAGNOSTIC_LANGUAGE.SCSS]: DIAGNOSTIC_LANGUAGE.SCSS,
+  [DIAGNOSTIC_LANGUAGE.LESS]: DIAGNOSTIC_LANGUAGE.LESS,
+});
 
 function verifyBundledRuntime() {
   const missingComponents = inspectRuntimeComponents(PLUGIN_ROOT).filter(({available}) => !available);
@@ -432,7 +455,7 @@ function serverKind(file) {
 function findTsdk(root) {
   let current = root;
   while (true) {
-    const workspaceTsdk = path.join(current, "node_modules", "typescript", "lib");
+    const workspaceTsdk = path.join(current, "node_modules", RUNTIME_PACKAGE.TYPESCRIPT, "lib");
     if (existsSync(path.join(workspaceTsdk, "tsserver.js"))) return workspaceTsdk;
     const parent = path.dirname(current);
     if (parent === current) break;
@@ -469,7 +492,7 @@ class TsserverBridge {
       if (message) process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] ${message}\n`);
     });
     this.process.on("exit", (code, signal) => {
-      const error = new Error(`Vue tsserver bridge exited (${code ?? signal ?? "unknown"})`);
+      const error = new Error(`Vue tsserver bridge exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`);
       for (const pending of this.pending.values()) pending.reject(error);
       this.pending.clear();
     });
@@ -570,8 +593,8 @@ class LspClient {
       if (message) process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] ${message}\n`);
     });
     this.process.on("exit", (code, signal) => {
-      process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] exited (${code ?? signal ?? "unknown"})\n`);
-      const error = new Error(`${this.kind} language server exited (${code ?? signal ?? "unknown"})`);
+      process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})\n`);
+      const error = new Error(`${this.kind} language server exited (${code ?? signal ?? COMMON_VALUE.UNKNOWN})`);
       for (const pending of this.pending.values()) pending.reject(error);
       this.pending.clear();
     });
@@ -828,7 +851,8 @@ class LspClient {
     const uri = await this.syncDocument(file);
     const document = this.documents.get(uri);
     const documentVersion = document?.version;
-    const documentContentFingerprint = textFingerprint(document?.text || "");
+    const documentText = document?.text || "";
+    const documentContentFingerprint = textFingerprint(documentText);
     const existing = this.diagnosticAcquisitions.get(uri);
     if (existing?.documentVersion === documentVersion && existing.documentContentFingerprint === documentContentFingerprint) {
       return existing.promise;
@@ -864,6 +888,7 @@ class LspClient {
       return {
         ...report,
         freshness,
+        documentText,
         documentContentFingerprint,
         waitedMilliseconds: Date.now() - startedAt,
       };
@@ -1685,13 +1710,90 @@ function flattenDocumentSymbols(symbols, file, parent = [], output = []) {
   return output;
 }
 
-function normalizeDiagnostics(raw, maxResults) {
+function vueDiagnosticBlock(block, region, defaultLanguage) {
+  if (!block) return undefined;
+  const declaredLanguage = block.lang || defaultLanguage;
+  return {
+    startOffset: block.loc.start.offset,
+    endOffset: block.loc.end.offset,
+    region,
+    language: vueEmbeddedLanguages[declaredLanguage] || DIAGNOSTIC_LANGUAGE.UNKNOWN,
+  };
+}
+
+function diagnosticLineOffsets(text) {
+  const offsets = [0];
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === "\n") offsets.push(index + 1);
+  }
+  return offsets;
+}
+
+function strictDiagnosticOffset(text, lineOffsets, position) {
+  const lineStart = lineOffsets[position.line];
+  if (lineStart === undefined || position.character < 0) return undefined;
+  const nextLineStart = lineOffsets[position.line + 1];
+  let lineEnd = nextLineStart === undefined ? text.length : nextLineStart - 1;
+  if (text[lineEnd - 1] === "\r") lineEnd--;
+  const offset = lineStart + position.character;
+  return offset <= lineEnd ? offset : undefined;
+}
+
+function diagnosticRangeOffsets(text, lineOffsets, range) {
+  if (!range?.start || !range?.end) return undefined;
+  const start = strictDiagnosticOffset(text, lineOffsets, range.start);
+  const end = strictDiagnosticOffset(text, lineOffsets, range.end);
+  if (start === undefined || end === undefined || end < start) return undefined;
+  return {start, end};
+}
+
+async function diagnosticProvenance(file, providerKind, text, diagnostics) {
+  const documentLanguage = languageId(file);
+  const provider = diagnosticProviders[providerKind] || DIAGNOSTIC_PROVIDER.UNKNOWN;
+  if (documentLanguage !== LANGUAGE_ID.VUE) {
+    return {
+      provider,
+      documentLanguage,
+      locate: () => ({embeddedRegion: DIAGNOSTIC_REGION.DOCUMENT, embeddedLanguage: documentLanguage}),
+    };
+  }
+
+  const unknown = () => ({embeddedRegion: DIAGNOSTIC_REGION.UNKNOWN, embeddedLanguage: DIAGNOSTIC_LANGUAGE.UNKNOWN});
+  if (diagnostics.length === 0) return {provider, documentLanguage, locate: unknown};
+  const {parseVueSfc} = await vueParsingDependencies();
+  const {descriptor, errors} = parseVueSfc(text, {filename: file});
+  if (errors.length > 0) return {provider, documentLanguage, locate: unknown};
+
+  const blocks = [
+    vueDiagnosticBlock(descriptor.script, DIAGNOSTIC_REGION.SCRIPT, VUE_SCRIPT_LANGUAGE.JAVASCRIPT),
+    vueDiagnosticBlock(descriptor.scriptSetup, DIAGNOSTIC_REGION.SCRIPT_SETUP, VUE_SCRIPT_LANGUAGE.JAVASCRIPT),
+    vueDiagnosticBlock(descriptor.template, DIAGNOSTIC_REGION.TEMPLATE, DIAGNOSTIC_LANGUAGE.HTML),
+    ...descriptor.styles.map((block) => vueDiagnosticBlock(block, DIAGNOSTIC_REGION.STYLE, DIAGNOSTIC_LANGUAGE.CSS)),
+    ...descriptor.customBlocks.map((block) => vueDiagnosticBlock(block, DIAGNOSTIC_REGION.CUSTOM_BLOCK)),
+  ].filter(Boolean);
+  const lineOffsets = diagnosticLineOffsets(text);
+
+  return {
+    provider,
+    documentLanguage,
+    locate: (range) => {
+      const offsets = diagnosticRangeOffsets(text, lineOffsets, range);
+      if (!offsets) return unknown();
+      const block = blocks.find(({startOffset, endOffset}) => offsets.start >= startOffset && offsets.end <= endOffset);
+      if (!block) return unknown();
+      return {embeddedRegion: block.region, embeddedLanguage: block.language};
+    },
+  };
+}
+
+function normalizeDiagnostics(raw, maxResults, provenance) {
   return limit(raw, maxResults).map((item) => ({
     severity: diagnosticSeverities[item.severity - 1] || DIAGNOSTIC_SEVERITY.NOT_REPORTED,
     code: item.code,
     source: item.source,
     message: item.message,
     range: displayRange(item.range),
+    ...provenance.locate(item.range),
     relatedInformation: item.relatedInformation?.map((related) => ({
       message: related.message,
       ...normalizeLocation(related.location),
@@ -1708,7 +1810,10 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
     getReferenceSet(context, line, column, options.includeDeclaration, options.crossWorkspace ?? true, options.maxCandidates),
     options.includeDiagnostics ? context.client.diagnostics(context.file) : Promise.resolve([]),
   ]);
-  const diagnostics = options.includeDiagnostics ? normalizeDiagnostics(rawDiagnostics.items, options.maxDiagnostics) : [];
+  const provenance = options.includeDiagnostics
+    ? await diagnosticProvenance(context.file, context.client.kind, rawDiagnostics.documentText, rawDiagnostics.items)
+    : undefined;
+  const diagnostics = options.includeDiagnostics ? normalizeDiagnostics(rawDiagnostics.items, options.maxDiagnostics, provenance) : [];
   let effectiveHover = hover;
   let signatureSource = hoverText(hover?.contents) ? SIGNATURE_SOURCE.QUERY_POSITION_HOVER : SIGNATURE_SOURCE.NOT_REPORTED;
   let signatureDefinition;
@@ -1771,6 +1876,7 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
     },
     diagnostics: options.includeDiagnostics
       ? {
+          provenance: {provider: provenance.provider, documentLanguage: provenance.documentLanguage},
           items: diagnostics,
           totalCount: rawDiagnostics.items.length,
           itemsReturnedAreSubset: rawDiagnostics.items.length > diagnostics.length,
@@ -2218,7 +2324,7 @@ server.registerTool(
       const all = flattenDocumentSymbols(raw || [], context.file);
       const symbols = limit(all, maxResults);
       return toolResult(tool, {
-        request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
+        request: {file: context.file, searchScope: SEARCH_SCOPE.DOCUMENT, resultLimit: normalizedLimit(maxResults)},
         result: {symbols, symbolsFound: all.length},
         collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
         presentation: {
@@ -2387,7 +2493,8 @@ server.registerTool(
     try {
       const context = await clientForFile(file, root);
       const report = await context.client.diagnostics(context.file);
-      const diagnostics = normalizeDiagnostics(report.items, maxResults);
+      const provenance = await diagnosticProvenance(context.file, context.client.kind, report.documentText, report.items);
+      const diagnostics = normalizeDiagnostics(report.items, maxResults, provenance);
       const versionConfirmed = report.freshness === DIAGNOSTIC_FRESHNESS.CURRENT;
       const diagnosticReport = {
         items: diagnostics,
@@ -2395,8 +2502,9 @@ server.registerTool(
         itemsReturnedAreSubset: diagnostics.length < report.items.length,
       };
       return toolResult(tool, {
-        request: {file: context.file, searchScope: "document", resultLimit: normalizedLimit(maxResults)},
+        request: {file: context.file, searchScope: SEARCH_SCOPE.DOCUMENT, resultLimit: normalizedLimit(maxResults)},
         result: {
+          provenance: {provider: provenance.provider, documentLanguage: provenance.documentLanguage},
           evidence: {
             status: versionConfirmed ? EVIDENCE_STATUS.VERIFIED : EVIDENCE_STATUS.UNTRUSTED,
             reason: diagnosticEvidenceReason(report.freshness, report.snapshotConfirmed),
