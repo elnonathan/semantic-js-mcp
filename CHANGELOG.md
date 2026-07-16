@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Cross-platform CI coverage for supported Node.js LTS lines.
+- Focused negative-verification and public-documentation gates.
+- Concise starter prompts and evidence examples for common agent workflows.
+
 ## [0.10.0] - 2026-07-16
 
 ### Added

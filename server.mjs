@@ -13,6 +13,7 @@ import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
+import {collectStableSnapshot} from "./lib/stable-collection.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -1638,19 +1639,13 @@ async function getReferenceSet(context, line, column, includeDeclaration, crossW
     deleteReferenceSet(existing.id, existing);
   }
 
-  let stableCollection;
-  for (let attempt = 1; attempt <= DEFAULT.COLLECTION_STABILITY_ATTEMPTS; attempt++) {
-    const inventoryBefore = await repositorySourceInventory(context.repositoryRoot);
-    const analysis = await collectReferences(context, line, column, includeDeclaration, crossWorkspace, maxCandidates);
-    const [fileFingerprints, inventoryAfter] = await Promise.all([
-      fingerprintFiles(analysis.evidenceFiles),
-      repositorySourceInventory(context.repositoryRoot),
-    ]);
-    if (sameRepositoryInventory(inventoryBefore, inventoryAfter)) {
-      stableCollection = {analysis, fileFingerprints, repositorySourceInventory: inventoryAfter, attempt};
-      break;
-    }
-  }
+  const stableCollection = await collectStableSnapshot({
+    attempts: DEFAULT.COLLECTION_STABILITY_ATTEMPTS,
+    collect: () => collectReferences(context, line, column, includeDeclaration, crossWorkspace, maxCandidates),
+    inventory: () => repositorySourceInventory(context.repositoryRoot),
+    sameInventory: sameRepositoryInventory,
+    fingerprint: (analysis) => fingerprintFiles(analysis.evidenceFiles),
+  });
   if (!stableCollection) {
     throw new RepositoryChangedDuringCollectionError(context.repositoryRoot, DEFAULT.COLLECTION_STABILITY_ATTEMPTS);
   }
@@ -1659,15 +1654,15 @@ async function getReferenceSet(context, line, column, includeDeclaration, crossW
   const entry = {
     id,
     key,
-    analysis: stableCollection.analysis,
+    analysis: stableCollection.value,
     workspaceRoot: context.workspaceRoot,
     repositoryRoot: context.repositoryRoot,
     source: {file: context.file, line, column},
     createdAt: completedAt,
     lastUsedAt: completedAt,
     expiresAt: completedAt + REFERENCE_SET_TTL_MS,
-    fileFingerprints: stableCollection.fileFingerprints,
-    repositorySourceInventory: stableCollection.repositorySourceInventory,
+    fileFingerprints: stableCollection.fingerprints,
+    repositorySourceInventory: stableCollection.inventory,
     collectionStabilityAttempts: stableCollection.attempt,
   };
   referenceSetsById.set(id, entry);
@@ -1677,7 +1672,7 @@ async function getReferenceSet(context, line, column, includeDeclaration, crossW
     ...entry,
     reused: false,
     freshnessCheckedAt: completedAt,
-    freshnessCheckMilliseconds: stableCollection.repositorySourceInventory.elapsedMilliseconds,
+    freshnessCheckMilliseconds: stableCollection.inventory.elapsedMilliseconds,
   };
 }
 

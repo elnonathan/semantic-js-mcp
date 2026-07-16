@@ -42,9 +42,11 @@ semantic-js-mcp doctor
 
 Configure the host to run `semantic-js-mcp serve`.
 
+For practical investigation prompts and compact evidence examples, see [Getting started](docs/getting-started.md).
+
 ## Runtime
 
-- Node.js 22 or newer is supported.
+- Node.js 22 or newer is required.
 - Node.js 24 LTS is recommended for new installations. See the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 - `rg` (ripgrep) must be available on `PATH` for repository-wide discovery.
 - The nearest workspace TypeScript SDK is used when available; the bundled TypeScript SDK is the fallback.
@@ -219,6 +221,10 @@ npm run smoke:distribution
 `npm run smoke:distribution` packs the explicit npm file allowlist, installs the tarball into a temporary consumer project, runs the installed executable, and verifies that runtime components resolve from the consumer dependency tree rather than the source checkout.
 
 The smoke tests create temporary generic TypeScript and Vue projects. They do not depend on a specific application repository.
+
+## Reporting Problems
+
+Run `semantic-js-mcp doctor` and include its structured output, the package version, Node.js version, operating system, affected source type, and the smallest reproducible workspace or public repository. Remove proprietary source, credentials, local absolute paths, and customer data before opening an issue. See [Contributing](CONTRIBUTING.md) for validation details and the [Security policy](SECURITY.md) for private vulnerability reports.
 
 ## Current Limitations
 

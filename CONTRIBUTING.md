@@ -66,6 +66,8 @@ npm run smoke:distribution
 
 Also run `npm run benchmark` when collection cost or memory could change, and `npm run benchmark:lifecycle-memory` when provider disposal behavior changes. Run `npm run doctor` when changing runtime resolution, provider startup, the CLI, or diagnostic trust. New behavior should use generic fixtures and cover complete, partial, limited, failed, stale, or untrusted outcomes as applicable.
 
+`npm run check:documentation` validates the durable public documentation contract. `npm run smoke:negative` exercises missing runtime providers, invalid workspaces and limits, stale or expired reference sets, repository mutation, unresolved candidates, and diagnostic trust. The complete `npm run release:verify` gate includes both checks.
+
 `npm run release:verify` executes the complete local release gate and reports every check in one machine-readable result. It does not publish, tag, or modify an installed plugin.
 
 Use `npm run verify:published -- <version>` after publishing npm and the matching `v<version>` repository tag. It queries that exact registry version, installs it with isolated temporary state, verifies the installed executable, runs its doctor, then installs the plugin from the tag-pinned Codex marketplace in a temporary `CODEX_HOME`. Registry or network unavailability returns `blocked` rather than passing or failing the package.

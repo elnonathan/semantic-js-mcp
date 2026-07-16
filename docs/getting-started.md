@@ -1,0 +1,72 @@
+# Getting Started
+
+Semantic JS MCP adds static semantic evidence to an agent's existing code investigation. These prompts are starting points; the agent should still inspect source, search text, and run focused checks when behavior matters.
+
+## Trace A Symbol
+
+> Trace the named symbol `parseRequest` across this repository. Measure its scope first, verify the exact declaration and references, then inspect its direct callers and callees. Report unresolved or incomplete evidence explicitly.
+
+## Review A Security-Sensitive Change
+
+> Review the authentication changes in this diff. Use semantic evidence to verify every material symbol and cross-workspace reference, corroborate reachability with text search and direct source inspection, and distinguish introduced defects from pre-existing behavior.
+
+## Check Current Diagnostics
+
+> Check current diagnostics for `src/handler.ts`. Treat the file as clean only if the language server confirms the current document snapshot; otherwise report the result as untrusted and explain the required follow-up.
+
+## Reading Compact Results
+
+The examples below show the decision-bearing fields. Actual responses also identify the producer, normalized request, presentation mode, and exact continuation tools.
+
+### Complete Evidence
+
+```yaml
+result:
+  definitionSelectionStatus: one-definition-selected
+  semanticEvidence:
+    status: usable-as-requested
+    followUpReasons: []
+collection:
+  status: complete
+```
+
+This supports the requested static symbol claim. It does not prove runtime behavior or approve a change.
+
+### Partial Evidence
+
+```yaml
+result:
+  semanticEvidence:
+    status: follow-up-required
+    followUpReasons:
+      - collection-is-partial
+collection:
+  status: partial
+continueWith:
+  - lsp_unresolved_reference_page
+```
+
+Inspect the unresolved candidates and relevant source before making a coverage claim.
+
+### Untrusted Diagnostics
+
+```yaml
+result:
+  evidence:
+    status: untrusted
+    reason: language-server-did-not-report-current-document
+  diagnosticsForCurrentDocument: null
+collection:
+  status: partial
+```
+
+An empty unconfirmed report is not a clean diagnostic result.
+
+### Startup Failure
+
+```yaml
+status: blocked
+reason: runtime-component-missing
+```
+
+Run `semantic-js-mcp doctor` and report its structured runtime component evidence. A missing provider or unavailable command is an environment blocker, not a code pass or diagnostic result.

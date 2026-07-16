@@ -8,7 +8,10 @@ export const RELEASE_MODE = Object.freeze({
 export const RELEASE_CHECK = Object.freeze({
   STATIC: "static",
   RUNTIME: "runtime",
+  DOCUMENTATION: "documentation",
   CI_POLICY: "ci-policy",
+  NEGATIVE_VERIFICATION: "negative-verification",
+  DOCTOR: "doctor",
   TYPESCRIPT_SMOKE: "typescript-smoke",
   VUE_SMOKE: "vue-smoke",
   LIFECYCLE_SMOKE: "lifecycle-smoke",
@@ -52,7 +55,10 @@ export const RELEASE_ARGUMENT = Object.freeze({
 export const RELEASE_LOCAL_CHECKS = Object.freeze([
   Object.freeze({name: RELEASE_CHECK.STATIC, npmScript: "check"}),
   Object.freeze({name: RELEASE_CHECK.RUNTIME, npmScript: "check:runtime"}),
+  Object.freeze({name: RELEASE_CHECK.DOCUMENTATION, npmScript: "check:documentation"}),
   Object.freeze({name: RELEASE_CHECK.CI_POLICY, npmScript: "smoke:ci"}),
+  Object.freeze({name: RELEASE_CHECK.NEGATIVE_VERIFICATION, npmScript: "smoke:negative"}),
+  Object.freeze({name: RELEASE_CHECK.DOCTOR, npmScript: "smoke:doctor"}),
   Object.freeze({name: RELEASE_CHECK.TYPESCRIPT_SMOKE, npmScript: "smoke"}),
   Object.freeze({name: RELEASE_CHECK.VUE_SMOKE, npmScript: "smoke:vue"}),
   Object.freeze({name: RELEASE_CHECK.LIFECYCLE_SMOKE, npmScript: "smoke:lifecycle"}),

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import {readFile} from "node:fs/promises";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
 import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
 import {isNamedSymbolTool, namedSemanticEvidenceMatches} from "../lib/semantic-evidence.mjs";
 import {
@@ -76,7 +78,7 @@ function decision(status, reason) {
   return {status, exitCode: CI_EXIT_CODE[status.toUpperCase()], reason};
 }
 
-function evaluate(data) {
+export function evaluateSemanticResult(data) {
   const result = data?.structuredContent || data;
   if (!isCanonicalResult(result)) {
     return {...decision(CI_STATUS.BLOCKED, CI_REASON.INVALID_INPUT), source: {}};
@@ -109,22 +111,26 @@ function evaluate(data) {
   return {...decision(CI_STATUS.PASS, CI_REASON.COMPLETE_EVIDENCE), source};
 }
 
-let output;
-try {
-  const input = parseInput(await readInput(process.argv[2]));
-  output = {
-    protocol: {name: RESULT_SCHEMA.NAME, resultSchemaVersion: RESULT_SCHEMA.VERSION},
-    ...evaluate(input),
-  };
-} catch (error) {
-  output = {
-    protocol: {name: RESULT_SCHEMA.NAME, resultSchemaVersion: RESULT_SCHEMA.VERSION},
-    ...decision(CI_STATUS.BLOCKED, CI_REASON.INVALID_INPUT),
-    source: {},
-    message: error instanceof Error ? error.message : String(error),
-  };
+async function main() {
+  let output;
+  try {
+    const input = parseInput(await readInput(process.argv[2]));
+    output = {
+      protocol: {name: RESULT_SCHEMA.NAME, resultSchemaVersion: RESULT_SCHEMA.VERSION},
+      ...evaluateSemanticResult(input),
+    };
+  } catch (error) {
+    output = {
+      protocol: {name: RESULT_SCHEMA.NAME, resultSchemaVersion: RESULT_SCHEMA.VERSION},
+      ...decision(CI_STATUS.BLOCKED, CI_REASON.INVALID_INPUT),
+      source: {},
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const useYaml = process.argv.includes(YAML_OUTPUT_ARGUMENT);
+  process.stdout.write(useYaml ? stringifyYaml(output, {lineWidth: 0}) : `${JSON.stringify(output, null, 2)}\n`);
+  process.exitCode = output.exitCode;
 }
 
-const useYaml = process.argv.includes(YAML_OUTPUT_ARGUMENT);
-process.stdout.write(useYaml ? stringifyYaml(output, {lineWidth: 0}) : `${JSON.stringify(output, null, 2)}\n`);
-process.exitCode = output.exitCode;
+if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) await main();

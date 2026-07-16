@@ -45,7 +45,10 @@ Run the complete local validation sequence before reviewing a distribution chang
 ```bash
 npm run check
 npm run check:runtime
+npm run check:documentation
 npm run smoke:ci
+npm run smoke:negative
+npm run smoke:doctor
 npm run smoke
 npm run smoke:vue
 npm run smoke:lifecycle
@@ -64,3 +67,7 @@ npm run verify:published -- <version>
 The local release gate runs every configured source, runtime, semantic, evaluation, distribution, and benchmark check and reports all failures instead of stopping at the first one. It performs no publication or installed-plugin mutation.
 
 Postpublication verification requires an explicit version and the matching `v<version>` repository tag. It queries that immutable registry version, installs it with a fresh temporary npm cache and consumer project, verifies the installed executable and manifest, then runs the installed doctor to cover MCP startup, tool discovery, TypeScript evidence, and Vue navigation. It also installs the plugin from the tag-pinned marketplace inside a temporary `CODEX_HOME` and verifies the enabled plugin version. Temporary state is removed afterward. An unavailable registry, marketplace, or network is reported as `blocked`.
+
+## Continuous Integration
+
+GitHub Actions runs the complete release gate on Node.js 22 and 24 across Linux, macOS, and Windows. These are the supported LTS lines at the time this matrix was defined. The gate verifies ripgrep before running static checks, runtime resolution, documentation, CI policy, negative fixtures, doctor, TypeScript and Vue semantics, provider lifecycle, package installation, and the short benchmark.
