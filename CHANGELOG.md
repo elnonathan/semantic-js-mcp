@@ -4,29 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- Cross-platform CI coverage for supported Node.js LTS lines.
-- Focused negative-verification and public-documentation gates.
-- Concise starter prompts and evidence examples for common agent workflows.
-
-### Fixed
-
-- Resolve cross-project import aliases consistently when a language server first returns the local import binding.
-- Canonicalize Windows source positions when verifying and grouping cross-project references.
-- Make release verification portable across Windows paths, executable shims, temporary-file locking, and checkout line endings.
-- Keep declaration filtering and language-server client eviction stable across platform-specific provider output and slow initialization.
-
-## [0.10.0] - 2026-07-16
+## [0.10.0] - 2026-07-17
 
 ### Added
 
 - Add a deterministic semantic-evidence usability status to named counts and audits, with explicit follow-up reasons for incomplete collection or ambiguous definition selection.
 - Add a repeated post-disposal memory benchmark that separates MCP heap, MCP resident memory, and child-provider resident memory under an explicitly scoped measurement method.
+- Add cross-platform CI coverage for supported Node.js LTS lines.
+- Add focused negative-verification and public-documentation gates.
+- Add concise starter prompts and evidence examples for common agent workflows.
 
 ### Fixed
 
 - Recover with fresh language-server and Vue tsserver clients after an initialized provider exits, while settling pending requests and diagnostics without leaving timeout handles active.
+- Resolve cross-project import aliases consistently when a language server first returns the local import binding.
+- Canonicalize Windows source positions when verifying and grouping cross-project references.
+- Make release verification portable across Windows paths, executable shims, temporary-file locking, and checkout line endings.
+- Keep declaration filtering and language-server client eviction stable across platform-specific provider output and slow initialization.
 
 ## [0.9.0] - 2026-07-16
 
