@@ -14,6 +14,13 @@ const CHECK_STATUS = Object.freeze({OK: "ok"});
 const PROCESS_ERROR = Object.freeze({NOT_FOUND: "ESRCH"});
 const PROCESS_EVENT = Object.freeze({DATA: "data"});
 const PROCESS_SIGNAL = Object.freeze({EXISTS: 0, TERMINATE: "SIGTERM"});
+const LIFECYCLE_PHASE = Object.freeze({
+  CONNECT: "connect",
+  IDLE_DISPOSAL: "idle-disposal",
+  LRU_EVICTION: "lru-eviction",
+  PROVIDER_RECOVERY: "provider-recovery",
+  VUE_BRIDGE_RECOVERY: "vue-bridge-recovery",
+});
 const TIMING = Object.freeze({
   CLIENT_IDLE_TIMEOUT_MS: 300,
   CLIENT_MINIMUM_EVICTION_AGE_MS: 50,
@@ -190,7 +197,9 @@ const fixtureB = await createWorkspace("b", "lifecycleTargetB");
 const vueFixture = await createVueWorkspace();
 const providerPids = [];
 const bridgePids = [];
-let stderrBuffer = "";
+let lifecyclePhase = LIFECYCLE_PHASE.CONNECT;
+let serverStderr = "";
+let stderrLineBuffer = "";
 const client = new Client({name: "semantic-js-mcp-lifecycle-smoke", version: "1.0.0"});
 const transport = new StdioClientTransport({
   command: process.execPath,
@@ -206,9 +215,11 @@ const transport = new StdioClientTransport({
 });
 
 transport.stderr?.on(PROCESS_EVENT.DATA, (chunk) => {
-  stderrBuffer += chunk.toString();
-  const lines = stderrBuffer.split("\n");
-  stderrBuffer = lines.pop() || "";
+  const text = chunk.toString();
+  serverStderr += text;
+  stderrLineBuffer += text;
+  const lines = stderrLineBuffer.split("\n");
+  stderrLineBuffer = lines.pop() || "";
   for (const line of lines) {
     const match = PROVIDER_START_PATTERN.exec(line);
     if (match) providerPids.push(Number(match[1]));
@@ -221,6 +232,7 @@ try {
   await assertPendingRequestRegistry();
   await client.connect(transport);
 
+  lifecyclePhase = LIFECYCLE_PHASE.IDLE_DISPOSAL;
   await assertDocumentSymbol(client, fixtureA);
   await waitUntil(() => providerPids.length >= 1, "Cold-start provider was not observed");
   const initialProvider = providerPids[0];
@@ -231,12 +243,14 @@ try {
   const replacementAfterIdle = providerPids[1];
   assert(replacementAfterIdle !== initialProvider, "Idle disposal reused the exited provider process");
 
+  lifecyclePhase = LIFECYCLE_PHASE.LRU_EVICTION;
   await delay(TIMING.EVICTION_AGE_WAIT_MS);
   await assertDocumentSymbol(client, fixtureB);
   await waitUntil(() => providerPids.length >= 3, "Second workspace provider was not observed");
   await waitUntil(() => !processExists(replacementAfterIdle), "Least-recently-used provider was not evicted at capacity");
   const providerBeforeExit = providerPids[2];
 
+  lifecyclePhase = LIFECYCLE_PHASE.PROVIDER_RECOVERY;
   const pendingDiagnostics = client.callTool({
     name: TOOL.DIAGNOSTICS,
     arguments: {file: fixtureB.file, root: fixtureB.workspace},
@@ -252,6 +266,7 @@ try {
   await waitUntil(() => providerPids.length >= 4, "Unexpected provider exit did not create a replacement");
   assert(providerPids[3] !== providerBeforeExit, "Provider recovery reused the exited process");
 
+  lifecyclePhase = LIFECYCLE_PHASE.VUE_BRIDGE_RECOVERY;
   await delay(TIMING.EVICTION_AGE_WAIT_MS);
   await assertDocumentSymbol(client, vueFixture);
   await waitUntil(() => bridgePids.length >= 1, "Vue tsserver bridge was not observed");
@@ -277,6 +292,12 @@ try {
       null,
       2,
     )}\n`,
+  );
+} catch (error) {
+  const recentServerStderr = serverStderr.trim().split("\n").slice(-40).join("\n");
+  throw new Error(
+    `${error instanceof Error ? error.message : String(error)}\nLifecycle phase: ${lifecyclePhase}\nServer stderr:\n${recentServerStderr || "(empty)"}`,
+    {cause: error},
   );
 } finally {
   await client.close().catch(() => undefined);

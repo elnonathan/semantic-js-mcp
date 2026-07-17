@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 - Resolve cross-project import aliases consistently when a language server first returns the local import binding.
 - Make release verification portable across Windows paths, executable shims, temporary-file locking, and checkout line endings.
+- Keep declaration filtering and language-server client eviction stable across platform-specific provider output and slow initialization.
 
 ## [0.10.0] - 2026-07-16
 

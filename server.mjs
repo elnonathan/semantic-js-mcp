@@ -610,6 +610,7 @@ class LspClient {
     this.diagnosticsCache = new Map();
     this.diagnosticWaiters = new Map();
     this.diagnosticAcquisitions = new Map();
+    this.activeDocumentSynchronizations = 0;
     this.serverCapabilities = {};
     this.tsserverBridge = undefined;
     this.onExit = onExit;
@@ -817,21 +818,26 @@ class LspClient {
   }
 
   async syncDocument(file) {
-    await this.ready;
-    const uri = toUri(file);
-    const text = await readFile(file, "utf8");
-    const current = this.documents.get(uri);
-    if (!current) {
-      this.documents.set(uri, {text, version: 1});
-      this.notify("textDocument/didOpen", {textDocument: {uri, languageId: languageId(file), version: 1, text}});
-    } else if (current.text !== text) {
-      invalidateReferenceSetsForFile(file);
-      this.invalidateDiagnostics(uri);
-      const version = current.version + 1;
-      this.documents.set(uri, {text, version});
-      this.notify("textDocument/didChange", {textDocument: {uri, version}, contentChanges: [{text}]});
+    this.activeDocumentSynchronizations += 1;
+    try {
+      await this.ready;
+      const uri = toUri(file);
+      const text = await readFile(file, "utf8");
+      const current = this.documents.get(uri);
+      if (!current) {
+        this.documents.set(uri, {text, version: 1});
+        this.notify("textDocument/didOpen", {textDocument: {uri, languageId: languageId(file), version: 1, text}});
+      } else if (current.text !== text) {
+        invalidateReferenceSetsForFile(file);
+        this.invalidateDiagnostics(uri);
+        const version = current.version + 1;
+        this.documents.set(uri, {text, version});
+        this.notify("textDocument/didChange", {textDocument: {uri, version}, contentChanges: [{text}]});
+      }
+      return uri;
+    } finally {
+      this.activeDocumentSynchronizations -= 1;
     }
-    return uri;
   }
 
   async textRequest(method, file, extra = {}) {
@@ -990,6 +996,7 @@ const clients = new Map();
 function clientIsBusy(client) {
   const diagnosticAcquisitionActive = [...client.diagnosticAcquisitions.values()].some((acquisition) => !acquisition.completed);
   return (
+    client.activeDocumentSynchronizations > 0 ||
     client.pending.size > 0 ||
     client.diagnosticWaiters.size > 0 ||
     diagnosticAcquisitionActive ||
@@ -1042,6 +1049,8 @@ function getOrCreateClient(key, root, kind) {
 async function waitForReadyClient(key, client) {
   try {
     await client.ready;
+    const entry = clients.get(key);
+    if (entry?.client === client) entry.lastUsedAt = Date.now();
     return client;
   } catch (error) {
     const entry = clients.get(key);
@@ -1412,11 +1421,26 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
 
 async function collectReferences(context, line, column, includeDeclaration, crossWorkspace, maxCandidates) {
   const token = await identifierAt(context.file, line, column);
-  const nativeResult = await context.client.textRequest("textDocument/references", context.file, {
-    position: lspPosition(line, column),
-    context: {includeDeclaration},
-  });
-  const nativeReferences = normalizeLocations(nativeResult).map((location) => ({...location, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP}));
+  const nativeRequest = (requestIncludesDeclaration) =>
+    context.client.textRequest("textDocument/references", context.file, {
+      position: lspPosition(line, column),
+      context: {includeDeclaration: requestIncludesDeclaration},
+    });
+  const nativeResult = await nativeRequest(includeDeclaration);
+  const nativeReferences = normalizeLocations(nativeResult).map((location) => ({
+    ...location,
+    via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP,
+  }));
+  const nativeReferencesWithDeclaration = includeDeclaration
+    ? nativeReferences
+    : normalizeLocations(await nativeRequest(true)).map((location) => ({
+        ...location,
+        via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP,
+      }));
+  const nativeReferenceKeys = new Set(nativeReferences.map(locationKey));
+  const nativeDeclarationKeys = new Set(
+    nativeReferencesWithDeclaration.filter((location) => !nativeReferenceKeys.has(locationKey(location))).map(locationKey),
+  );
   const cross = crossWorkspace
     ? await crossWorkspaceReferences(context, line, column, maxCandidates, new Set(nativeReferences.map(locationKey)))
     : {
@@ -1444,7 +1468,7 @@ async function collectReferences(context, line, column, includeDeclaration, cros
       };
 
   const nativeKeys = new Set(nativeReferences.map(locationKey));
-  const declarationKeys = new Set(cross.targetDefinitions.map(locationKey));
+  const declarationKeys = new Set([...cross.targetDefinitions.map(locationKey), ...nativeDeclarationKeys]);
   const nativeReferencesForResult = includeDeclaration
     ? nativeReferences
     : nativeReferences.filter((location) => !declarationKeys.has(locationKey(location)));

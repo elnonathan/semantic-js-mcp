@@ -646,13 +646,11 @@ try {
     ),
     "includeDeclaration=false removed the originating usage",
   );
-  assert(
-    !referenceLocations(withoutDeclaration.result).some(
-      (location) =>
-        path.basename(location.file) === path.basename(targetFile) && location.range.start.line === 2 && location.range.start.column === 17,
-    ),
-    "includeDeclaration=false retained the declaration",
+  const retainedDeclarations = referenceLocations(withoutDeclaration.result).filter(
+    (location) =>
+      path.basename(location.file) === path.basename(targetFile) && location.range.start.line === 2 && location.range.start.column === 17,
   );
+  assert(retainedDeclarations.length === 0, `includeDeclaration=false retained the declaration: ${JSON.stringify(retainedDeclarations)}`);
 
   const refreshedPage = assertResult(
     await client.callTool({
