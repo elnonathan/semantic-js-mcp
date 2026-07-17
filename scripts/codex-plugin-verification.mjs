@@ -71,6 +71,25 @@ export async function verifyCodexPlugin({version, workspace, spawn, runCommand})
     ];
   }
 
+  const upgrade = await execute(CODEX_DISTRIBUTION.EXECUTABLE, [
+    CODEX_DISTRIBUTION.PLUGIN_COMMAND,
+    CODEX_DISTRIBUTION.MARKETPLACE_COMMAND,
+    CODEX_DISTRIBUTION.UPGRADE_COMMAND,
+    CODEX_DISTRIBUTION.MARKETPLACE_NAME,
+    CODEX_DISTRIBUTION.JSON_ARGUMENT,
+  ]);
+  if (upgrade.exitCode !== CI_EXIT_CODE.PASS) {
+    const unavailable = upgrade.exitCode === undefined || networkUnavailable(upgrade);
+    return [
+      check(
+        RELEASE_CHECK.CODEX_MARKETPLACE,
+        unavailable ? CI_STATUS.BLOCKED : CI_STATUS.FAIL,
+        unavailable ? RELEASE_REASON.CODEX_MARKETPLACE_UNAVAILABLE : RELEASE_REASON.CODEX_MARKETPLACE_FAILED,
+        {marketplaceRef, message: failureMessage(upgrade)},
+      ),
+    ];
+  }
+
   const checks = [check(RELEASE_CHECK.CODEX_MARKETPLACE, CI_STATUS.PASS, RELEASE_REASON.CHECK_COMPLETED, {marketplaceRef})];
   const installation = await execute(CODEX_DISTRIBUTION.EXECUTABLE, [
     CODEX_DISTRIBUTION.PLUGIN_COMMAND,

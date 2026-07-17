@@ -6,7 +6,7 @@ import {evaluateDocumentation} from "./documentation-gate.mjs";
 
 const headingText = (headings) => headings.map((heading) => `## ${heading}`).join("\n");
 const valid = {
-  [DOCUMENTATION_FILE.README]: `${headingText(DOCUMENTATION_REQUIREMENT.README_HEADINGS)}\n${DOCUMENTATION_REQUIREMENT.README_LINKS.map((link) => `[doc](${link})`).join("\n")}`,
+  [DOCUMENTATION_FILE.README]: `${headingText(DOCUMENTATION_REQUIREMENT.README_HEADINGS)}\n${DOCUMENTATION_REQUIREMENT.README_LINKS.map((link) => `[doc](${link})`).join("\n")}\n${DOCUMENTATION_REQUIREMENT.README_LITERALS.join("\n")}`,
   [DOCUMENTATION_FILE.GETTING_STARTED]: `${headingText(DOCUMENTATION_REQUIREMENT.GETTING_STARTED_HEADINGS)}\n${DOCUMENTATION_REQUIREMENT.GETTING_STARTED_LITERALS.join("\n")}`,
   [DOCUMENTATION_FILE.CONTRIBUTING]: "# Contributing",
   [DOCUMENTATION_FILE.SECURITY]: "# Security",
@@ -46,9 +46,28 @@ strictEqual(
   "Missing canonical example literal was accepted",
 );
 
+const missingMarketplaceUpgrade = {
+  ...valid,
+  [DOCUMENTATION_FILE.README]: valid[DOCUMENTATION_FILE.README].replace(DOCUMENTATION_REQUIREMENT.README_LITERALS[0], ""),
+};
+strictEqual(
+  evaluateDocumentation(missingMarketplaceUpgrade).some(
+    (finding) =>
+      finding.reason === DOCUMENTATION_REASON.LITERAL_MISSING && finding.literal === DOCUMENTATION_REQUIREMENT.README_LITERALS[0],
+  ),
+  true,
+  "Missing marketplace upgrade guidance was accepted",
+);
+
 process.stdout.write(
   `${JSON.stringify(
-    {validDocumentation: "pass", missingHeading: "rejected", missingLiteral: "rejected", privateCoordination: "rejected"},
+    {
+      validDocumentation: "pass",
+      missingHeading: "rejected",
+      missingLiteral: "rejected",
+      missingMarketplaceUpgrade: "rejected",
+      privateCoordination: "rejected",
+    },
     null,
     2,
   )}\n`,

@@ -81,7 +81,11 @@ try {
     calls[0].args.includes(`${CODEX_DISTRIBUTION.VERSION_REF_PREFIX}${version}`),
     "Codex marketplace verification did not use an immutable version ref",
   );
-  assert(calls[1].args.includes(CODEX_DISTRIBUTION.PLUGIN_SELECTOR), "Codex verification used the wrong plugin selector");
+  assert(
+    calls[1].args.includes(CODEX_DISTRIBUTION.UPGRADE_COMMAND) && calls[1].args.includes(CODEX_DISTRIBUTION.MARKETPLACE_NAME),
+    "Codex marketplace verification omitted the configured snapshot refresh",
+  );
+  assert(calls[2].args.includes(CODEX_DISTRIBUTION.PLUGIN_SELECTOR), "Codex verification used the wrong plugin selector");
   assert(
     calls.every((call) => call.options.env[CODEX_DISTRIBUTION.HOME_ENVIRONMENT_VARIABLE].startsWith(codexWorkspace)),
     "Codex verification did not isolate its state under the temporary workspace",
@@ -105,6 +109,22 @@ try {
     networkChecks[0].reason === RELEASE_REASON.CODEX_MARKETPLACE_UNAVAILABLE,
     "Unavailable Codex marketplace network used the wrong reason",
   );
+
+  let upgradeCall = 0;
+  const upgradeNetworkChecks = await verifyCodexPlugin({
+    version,
+    workspace: codexWorkspace,
+    runCommand: async () => {
+      upgradeCall++;
+      if (upgradeCall === 1) return {exitCode: CI_EXIT_CODE.PASS, stdout: "{}", stderr: ""};
+      return {exitCode: CI_EXIT_CODE.FAIL, stdout: "", stderr: "network is unreachable"};
+    },
+  });
+  assert(upgradeNetworkChecks[0].status === CI_STATUS.BLOCKED, "Unavailable marketplace upgrade was not blocked");
+  assert(
+    upgradeNetworkChecks[0].reason === RELEASE_REASON.CODEX_MARKETPLACE_UNAVAILABLE,
+    "Unavailable marketplace upgrade used the wrong reason",
+  );
 } finally {
   await rm(codexWorkspace, {recursive: true, force: true});
 }
@@ -116,6 +136,7 @@ process.stdout.write(
       missingPublishedVersion: "blocked",
       isolatedCodexPluginInstallation: "ok",
       unavailableCodexMarketplace: "blocked",
+      unavailableCodexMarketplaceUpgrade: "blocked",
     },
     null,
     2,

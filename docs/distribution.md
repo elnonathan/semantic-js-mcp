@@ -11,6 +11,16 @@ codex plugin add semantic-js-mcp@elnonathan
 
 The marketplace entry pins a concrete npm package version. Codex CLI 0.144.4 is the minimum verified client for npm-backed marketplace installation. A release updates the package version, plugin manifest, and marketplace entry together.
 
+For an existing marketplace installation, refresh its local snapshot before reinstalling the plugin:
+
+```bash
+codex plugin marketplace upgrade elnonathan
+codex plugin add semantic-js-mcp@elnonathan
+codex plugin list
+```
+
+`plugin add` reinstalls the plugin selected by the refreshed marketplace. Start a new Codex session after the listed version matches the release being installed.
+
 ## Executable
 
 ```bash

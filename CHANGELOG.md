@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Document and validate marketplace refresh before reinstalling an existing Codex plugin.
+
 ## [0.10.0] - 2026-07-17
 
 ### Added

@@ -52,6 +52,10 @@ export function evaluateDocumentation(documents) {
       if (readme.includes(`](${link})`)) continue;
       findings.push({file: DOCUMENTATION_FILE.README, reason: DOCUMENTATION_REASON.LINK_MISSING, link});
     }
+    for (const literal of DOCUMENTATION_REQUIREMENT.README_LITERALS) {
+      if (readme.includes(literal)) continue;
+      findings.push({file: DOCUMENTATION_FILE.README, reason: DOCUMENTATION_REASON.LITERAL_MISSING, literal});
+    }
   }
 
   const gettingStarted = documents[DOCUMENTATION_FILE.GETTING_STARTED];

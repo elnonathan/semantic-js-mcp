@@ -30,6 +30,7 @@ export const CODEX_DISTRIBUTION = Object.freeze({
   PLUGIN_COMMAND: "plugin",
   MARKETPLACE_COMMAND: "marketplace",
   ADD_COMMAND: "add",
+  UPGRADE_COMMAND: "upgrade",
   LIST_COMMAND: "list",
   REF_ARGUMENT: "--ref",
   JSON_ARGUMENT: "--json",

@@ -31,6 +31,18 @@ codex plugin add semantic-js-mcp@elnonathan
 
 Codex CLI 0.144.4 or newer is required for npm-backed marketplace installation. Start a new Codex session after installation. The plugin bundles both the MCP server configuration and the semantic-navigation skill.
 
+### Updating the Codex plugin
+
+Codex installs from a local snapshot of each configured marketplace. Refresh that snapshot before reinstalling so `plugin add` resolves the version currently declared by the marketplace:
+
+```bash
+codex plugin marketplace upgrade elnonathan
+codex plugin add semantic-js-mcp@elnonathan
+codex plugin list
+```
+
+`plugin add` reinstalls the plugin; a separate removal is not required. Start a new Codex session after the command reports the expected version.
+
 ### MCP executable
 
 Install the package globally when using an MCP host that accepts a command-based stdio configuration:

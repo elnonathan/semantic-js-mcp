@@ -12,7 +12,15 @@ export const PUBLIC_ROOT_DOCUMENT = Object.freeze(["CHANGELOG.md", "CONTRIBUTING
 export const PUBLIC_DOCUMENT_DIRECTORY = Object.freeze(["docs", "skills"]);
 
 export const DOCUMENTATION_REQUIREMENT = Object.freeze({
-  README_HEADINGS: Object.freeze(["Installation", "Runtime", "Verification", "Current Limitations", "Reporting Problems"]),
+  README_HEADINGS: Object.freeze([
+    "Installation",
+    "Updating the Codex plugin",
+    "Runtime",
+    "Verification",
+    "Current Limitations",
+    "Reporting Problems",
+  ]),
+  README_LITERALS: Object.freeze(["codex plugin marketplace upgrade elnonathan", "codex plugin add semantic-js-mcp@elnonathan"]),
   GETTING_STARTED_HEADINGS: Object.freeze([
     "Trace A Symbol",
     "Review A Security-Sensitive Change",
