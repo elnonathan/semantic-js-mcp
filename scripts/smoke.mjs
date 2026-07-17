@@ -449,9 +449,16 @@ try {
     countedDefinition.textSearch.matchesWhoseDefinitionCouldNotBeResolved >= 1,
     "Unresolvable text match was incorrectly classified as a different symbol",
   );
+  const countedReferencePage = assertResult(
+    await client.callTool({
+      name: TOOL.REFERENCE_PAGE,
+      arguments: {referenceSetId: countedDefinition.referenceSetId, cursor: "0", pageSize: 300},
+    }),
+    TOOL.REFERENCE_PAGE,
+  );
   assert(
-    countedDefinition.references.verifiedFromOtherWorkspaces >= 1,
-    "Cross-project alias reference was not verified from its owning workspace",
+    referenceLocations(countedReferencePage.result).some((location) => path.basename(location.file) === path.basename(consumerAliasFile)),
+    `Cross-project alias reference was absent from the verified set: ${JSON.stringify(countedDefinition.references)}`,
   );
   assert(
     count.continueWith.indexOf(TOOL.UNRESOLVED_REFERENCE_PAGE) < count.continueWith.indexOf(TOOL.REFERENCE_PAGE),
