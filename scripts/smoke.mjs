@@ -8,6 +8,7 @@ import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
+import {fileIdentity, locationKey} from "../lib/file-identity.mjs";
 import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
@@ -25,6 +26,7 @@ import {
   ERROR_CODE,
   FINGERPRINT_FORMAT,
   FORBIDDEN_PUBLIC_FIELD,
+  OPERATING_SYSTEM,
   PRESENTATION_MODE,
   PRODUCT,
   REFERENCE_SET_CHANGE_TYPE,
@@ -45,6 +47,30 @@ const forbiddenPublicKeys = new Set(FORBIDDEN_PUBLIC_FIELD);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+const windowsLocation = {
+  file: "C:\\Repository\\src\\Example.ts",
+  range: {start: {line: 2, column: 17}},
+};
+const differentlyCasedWindowsLocation = {
+  file: "c:/repository/src/example.ts",
+  range: {start: {line: 2, column: 17}},
+};
+assert(
+  fileIdentity(windowsLocation.file, OPERATING_SYSTEM.WINDOWS) ===
+    fileIdentity(differentlyCasedWindowsLocation.file, OPERATING_SYSTEM.WINDOWS),
+  "Windows file identity retained path casing or separator differences",
+);
+assert(
+  locationKey(windowsLocation, OPERATING_SYSTEM.WINDOWS) === locationKey(differentlyCasedWindowsLocation, OPERATING_SYSTEM.WINDOWS),
+  "Windows location identity retained path casing or separator differences",
+);
+for (const operatingSystem of [OPERATING_SYSTEM.LINUX, OPERATING_SYSTEM.MACOS]) {
+  assert(
+    fileIdentity("/Repository/src/Example.ts", operatingSystem) !== fileIdentity("/repository/src/example.ts", operatingSystem),
+    `${operatingSystem} file identity discarded path casing`,
+  );
 }
 
 function assertNoAmbiguousKeys(value, location = "structuredContent") {

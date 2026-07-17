@@ -11,6 +11,7 @@ import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
+import {fileIdentity, locationKey} from "./lib/file-identity.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {collectStableSnapshot} from "./lib/stable-collection.mjs";
@@ -302,10 +303,6 @@ async function discoverRoots(file, requestedRoot) {
     repositoryRoot,
     workspaceRoot: nearestProject || repositoryRoot,
   };
-}
-
-function locationKey(location) {
-  return `${location.file}:${location.range.start.line}:${location.range.start.column}`;
 }
 
 function workspaceConfigurationFiles(workspaceRoot, repositoryRoot) {
@@ -1102,7 +1099,7 @@ function normalizeLocations(value) {
 }
 
 function filesAreEqual(left, right) {
-  return path.relative(path.resolve(left), path.resolve(right)) === "";
+  return fileIdentity(left) === fileIdentity(right);
 }
 
 function locationsAreEqual(left, right) {

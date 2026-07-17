@@ -418,6 +418,12 @@ Result schema version: `7`
 - `error`
 - `close`
 
+## Operating System
+
+- `linux`
+- `darwin`
+- `win32`
+
 ## Process Exit Codes
 
 - `SUCCESS`: `0`

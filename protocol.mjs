@@ -433,6 +433,12 @@ export const NODE_EVENT = Object.freeze({
   CLOSE: "close",
 });
 
+export const OPERATING_SYSTEM = Object.freeze({
+  LINUX: "linux",
+  MACOS: "darwin",
+  WINDOWS: "win32",
+});
+
 export const DEFAULT = Object.freeze({
   REQUEST_TIMEOUT_MS: 30_000,
   DIAGNOSTIC_WAIT_MS: 2_000,
