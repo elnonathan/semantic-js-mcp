@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
-import {fileIdentity, locationKey} from "../lib/file-identity.mjs";
+import {fileIdentity, locationKey, locationKeyAt, locationKeyForOperatingSystem} from "../lib/file-identity.mjs";
 import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
@@ -57,14 +57,23 @@ const differentlyCasedWindowsLocation = {
   file: "c:/repository/src/example.ts",
   range: {start: {line: 2, column: 17}},
 };
+const windowsLocationKey = locationKeyForOperatingSystem(OPERATING_SYSTEM.WINDOWS);
 assert(
   fileIdentity(windowsLocation.file, OPERATING_SYSTEM.WINDOWS) ===
     fileIdentity(differentlyCasedWindowsLocation.file, OPERATING_SYSTEM.WINDOWS),
   "Windows file identity retained path casing or separator differences",
 );
 assert(
-  locationKey(windowsLocation, OPERATING_SYSTEM.WINDOWS) === locationKey(differentlyCasedWindowsLocation, OPERATING_SYSTEM.WINDOWS),
+  new Set([windowsLocation, differentlyCasedWindowsLocation].map(windowsLocationKey)).size === 1,
   "Windows location identity retained path casing or separator differences",
+);
+assert(
+  locationKeyAt(windowsLocation.file, 2, 17, OPERATING_SYSTEM.WINDOWS) === windowsLocationKey(differentlyCasedWindowsLocation),
+  "Windows source-position identity bypassed canonical location identity",
+);
+assert(
+  [windowsLocation].map(locationKey)[0] === locationKey(windowsLocation),
+  "The host location key consumed the Array.map callback index",
 );
 for (const operatingSystem of [OPERATING_SYSTEM.LINUX, OPERATING_SYSTEM.MACOS]) {
   assert(
@@ -458,7 +467,7 @@ try {
   );
   assert(
     referenceLocations(countedReferencePage.result).some((location) => path.basename(location.file) === path.basename(consumerAliasFile)),
-    `Cross-project alias reference was absent from the verified set: ${JSON.stringify(countedDefinition.references)}`,
+    `Cross-project alias reference was absent from the verified set: ${JSON.stringify({references: countedDefinition.references, textSearch: countedDefinition.textSearch})}`,
   );
   assert(
     count.continueWith.indexOf(TOOL.UNRESOLVED_REFERENCE_PAGE) < count.continueWith.indexOf(TOOL.REFERENCE_PAGE),

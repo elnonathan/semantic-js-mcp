@@ -11,7 +11,7 @@ import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
-import {fileIdentity, locationKey} from "./lib/file-identity.mjs";
+import {fileIdentity, locationKey, locationKeyAt} from "./lib/file-identity.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {collectStableSnapshot} from "./lib/stable-collection.mjs";
@@ -1324,7 +1324,7 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
   const target = await definitionsAt(context.file, context.boundaryRoot, token.line, token.column);
   const targetKeys = new Set(target.definitions.map(locationKey));
   if (targetKeys.size === 0) {
-    targetKeys.add(`${context.file}:${token.line}:${token.column}`);
+    targetKeys.add(locationKeyAt(context.file, token.line, token.column));
   }
 
   const search = await rgIdentifierCandidates(context.repositoryRoot, token.identifier, maxCandidates);
@@ -1797,9 +1797,10 @@ function presentReferenceSet(entry, offset, pageSize) {
   const references = entry.analysis.references.slice(start, start + pageSize);
   const referenceGroupsByFile = new Map();
   for (const reference of references) {
-    const group = referenceGroupsByFile.get(reference.file) || {file: reference.file, locations: []};
+    const key = fileIdentity(reference.file);
+    const group = referenceGroupsByFile.get(key) || {file: reference.file, locations: []};
     group.locations.push({range: reference.range, discoveryMethod: publicReferenceMethod(reference.via)});
-    referenceGroupsByFile.set(reference.file, group);
+    referenceGroupsByFile.set(key, group);
   }
   const nextOffset = start + references.length;
   return {
@@ -2060,10 +2061,11 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
 function groupedReferenceFiles(references) {
   const groups = new Map();
   for (const reference of references) {
-    const current = groups.get(reference.file) || {file: reference.file, count: 0, via: new Set()};
+    const key = fileIdentity(reference.file);
+    const current = groups.get(key) || {file: reference.file, count: 0, via: new Set()};
     current.count++;
     if (reference.via) current.via.add(reference.via);
-    groups.set(reference.file, current);
+    groups.set(key, current);
   }
   return [...groups.values()]
     .map((group) => ({file: group.file, count: group.count, via: [...group.via].sort()}))
