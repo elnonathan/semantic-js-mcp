@@ -29,6 +29,12 @@ strictEqual(workflow.concurrency?.["cancel-in-progress"], false, "An active publ
 strictEqual(setupNode?.with?.["node-version"], 24, "Publishing must use Node.js 24");
 strictEqual(setupNode?.with?.["registry-url"], "https://registry.npmjs.org", "Publishing must target npmjs.org");
 strictEqual(setupNode?.with?.["package-manager-cache"], false, "Release builds must not use a package-manager cache");
+strictEqual(
+  commands.includes("sudo apt-get update && sudo apt-get install --yes ripgrep"),
+  true,
+  "Publishing must install the required ripgrep executable",
+);
+strictEqual(commands.includes("rg --version"), true, "Publishing must verify ripgrep before the release gate");
 strictEqual(commands.includes("npm install --global npm@11.17.0"), true, "Publishing must install the verified npm CLI");
 strictEqual(commands.includes("npm ci"), true, "Publishing must install the locked dependency tree");
 strictEqual(commands.includes("npm run release:verify"), true, "Publishing must run the complete release gate");

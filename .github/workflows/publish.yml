@@ -26,6 +26,10 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
+      - name: Verify ripgrep
+        run: rg --version
       - name: Use an OIDC-compatible npm CLI
         run: npm install --global npm@11.17.0
       - name: Verify release identity

@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Document and validate marketplace refresh before reinstalling an existing Codex plugin.
+- Install and verify ripgrep in the trusted-publishing runner before executing the release gate.
 
 ## [0.10.0] - 2026-07-17
 
