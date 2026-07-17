@@ -98,11 +98,11 @@ jobs:
           node-version: 22
           cache: npm
       - name: Verify ripgrep
-        shell: bash
+        shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
         run: rg --version
       - name: Install dependencies
-        shell: bash
+        shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
         run: npm ci
       - name: Run complete release verification
-        shell: bash
+        shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
         run: npm run release:verify

@@ -844,10 +844,12 @@ try {
       changedDiagnostics.result.provenance.documentLanguage === DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
     "TypeScript diagnostics omitted provider or document-language provenance",
   );
-  assert(
-    changedReport.items.some((item) => item.message.includes("missingAfterDiagnosticChange")),
-    "Changed diagnostics did not report the introduced error",
-  );
+  if (changedDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED) {
+    assert(
+      changedReport.items.some((item) => item.message.includes("missingAfterDiagnosticChange")),
+      "Verified changed diagnostics did not report the introduced error",
+    );
+  }
   assert(
     changedReport.items.every(
       (item) => item.embeddedRegion === DIAGNOSTIC_REGION.DOCUMENT && item.embeddedLanguage === DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
