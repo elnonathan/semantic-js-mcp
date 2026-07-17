@@ -219,8 +219,17 @@ export const TOOL_DESCRIPTION = Object.freeze({
 
 export const LSP_METHOD = Object.freeze({
   DOCUMENT_DIAGNOSTIC: "textDocument/diagnostic",
+  EXECUTE_COMMAND: "workspace/executeCommand",
   PUBLISH_DIAGNOSTICS: "textDocument/publishDiagnostics",
   WORKSPACE_DIAGNOSTIC_REFRESH: "workspace/diagnostic/refresh",
+});
+
+export const LSP_COMMAND = Object.freeze({
+  GO_TO_SOURCE_DEFINITION: "_typescript.goToSourceDefinition",
+});
+
+export const TYPESCRIPT_SERVER_COMMAND = Object.freeze({
+  DEFINITION_AND_BOUND_SPAN: "definitionAndBoundSpan",
 });
 
 export const LIMIT_MODE = Object.freeze({

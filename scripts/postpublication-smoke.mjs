@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import {spawn} from "node:child_process";
-import {mkdtemp, mkdir, readFile, realpath, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, readFile, realpath, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
+import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   CI_EXIT_CODE,
   CI_STATUS,
@@ -63,8 +64,8 @@ function runNpm(args, cwd, environment) {
   return run("npm", args, {cwd, env: environment});
 }
 
-function runInstalledExecutable(args, cwd, environment) {
-  return runNpm(["exec", "--offline", "--", PRODUCT.NAME, ...args], cwd, environment);
+function runInstalledExecutable(executable, args, cwd, environment) {
+  return run(process.execPath, [executable, ...args], {cwd, env: environment});
 }
 
 function check(name, status, reason, details) {
@@ -138,10 +139,12 @@ async function verifyInstallation(context) {
 async function verifyInstalledVersion(context) {
   const installedRoot = await realpath(path.join(context.consumer, POSTPUBLICATION_PATH.DEPENDENCY_DIRECTORY, PRODUCT.NAME));
   const installedManifest = JSON.parse(await readFile(path.join(installedRoot, CONFIGURATION_FILE.PACKAGE), "utf8"));
-  const version = await runInstalledExecutable([CLI_ARGUMENT.VERSION], context.consumer, context.environment);
+  const executable = path.join(installedRoot, installedManifest.bin[PRODUCT.NAME]);
+  const version = await runInstalledExecutable(executable, [CLI_ARGUMENT.VERSION], context.consumer, context.environment);
   const passed =
     version.exitCode === CI_EXIT_CODE.PASS && version.stdout.trim() === requestedVersion && installedManifest.version === requestedVersion;
   return {
+    executable,
     result: check(
       RELEASE_CHECK.INSTALLED_VERSION,
       passed ? CI_STATUS.PASS : CI_STATUS.FAIL,
@@ -151,8 +154,8 @@ async function verifyInstalledVersion(context) {
   };
 }
 
-async function verifyInstalledDoctor(context) {
-  const doctor = await runInstalledExecutable([CLI_COMMAND.DOCTOR], context.consumer, context.environment);
+async function verifyInstalledDoctor(context, executable) {
+  const doctor = await runInstalledExecutable(executable, [CLI_COMMAND.DOCTOR], context.consumer, context.environment);
   let doctorResult;
   try {
     doctorResult = JSON.parse(doctor.stdout);
@@ -213,7 +216,7 @@ async function runVerification() {
   checks.push(installedVersion.result);
   if (installedVersion.result.status !== CI_STATUS.PASS) return;
 
-  checks.push(await verifyInstalledDoctor(context));
+  checks.push(await verifyInstalledDoctor(context, installedVersion.executable));
   checks.push(...(await verifyCodexPlugin({version: requestedVersion, workspace, spawn})));
 }
 
@@ -226,7 +229,7 @@ try {
     }),
   );
 } finally {
-  if (workspace) await rm(workspace, {recursive: true, force: true});
+  if (workspace) await removeTemporaryDirectory(workspace);
 }
 
 const status = releaseStatus(checks);

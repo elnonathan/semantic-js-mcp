@@ -2,12 +2,13 @@
 
 import path from "node:path";
 import {deepStrictEqual} from "node:assert";
-import {mkdtemp, mkdir, readFile, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, readFile, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
+import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -899,5 +900,5 @@ try {
   );
 } finally {
   await client.close().catch(() => undefined);
-  await rm(workspace, {recursive: true, force: true});
+  await removeTemporaryDirectory(workspace);
 }

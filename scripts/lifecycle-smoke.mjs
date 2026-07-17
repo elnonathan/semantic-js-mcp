@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import path from "node:path";
-import {mkdtemp, mkdir, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {PendingRequestRegistry} from "../lib/pending-requests.mjs";
+import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {ENVIRONMENT_VARIABLE, PRODUCT, TOOL} from "../protocol.mjs";
 
 const CHECK_STATUS = Object.freeze({OK: "ok"});
@@ -280,8 +281,8 @@ try {
 } finally {
   await client.close().catch(() => undefined);
   await Promise.all([
-    rm(fixtureA.workspace, {recursive: true, force: true}),
-    rm(fixtureB.workspace, {recursive: true, force: true}),
-    rm(vueFixture.workspace, {recursive: true, force: true}),
+    removeTemporaryDirectory(fixtureA.workspace),
+    removeTemporaryDirectory(fixtureB.workspace),
+    removeTemporaryDirectory(vueFixture.workspace),
   ]);
 }

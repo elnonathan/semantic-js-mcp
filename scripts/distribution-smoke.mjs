@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import {spawn} from "node:child_process";
-import {mkdtemp, mkdir, readFile, realpath, rm, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, readFile, realpath, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
+import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   CLI_ARGUMENT,
   CLI_MESSAGE,
@@ -50,8 +51,8 @@ function runNpm(args, cwd, environment = npmEnvironment) {
   return run("npm", args, {cwd, env: environment});
 }
 
-function runInstalledExecutable(args, cwd, environment) {
-  return runNpm(["exec", "--offline", "--", PRODUCT.NAME, ...args], cwd, environment);
+function runInstalledExecutable(executable, args, cwd, environment) {
+  return run(process.execPath, [executable, ...args], {cwd, env: environment});
 }
 
 function assert(condition, message) {
@@ -84,20 +85,22 @@ try {
   assert(installed.exitCode === 0, `Tarball installation failed: ${installed.stderr}`);
 
   const installedRoot = await realpath(path.join(consumer, "node_modules", PRODUCT.NAME));
+  const installedManifest = JSON.parse(await readFile(path.join(installedRoot, "package.json"), "utf8"));
+  const installedExecutable = path.join(installedRoot, installedManifest.bin[PRODUCT.NAME]);
   const isolatedPath = (process.env.PATH || "")
     .split(path.delimiter)
     .filter((entry) => entry && !path.resolve(entry).startsWith(sourceRoot))
     .join(path.delimiter);
   const installedEnvironment = {...npmEnvironment, PATH: isolatedPath};
-  const doctor = await runInstalledExecutable(["doctor"], consumer, installedEnvironment);
-  const version = await runInstalledExecutable([CLI_ARGUMENT.VERSION], consumer, installedEnvironment);
+  const doctor = await runInstalledExecutable(installedExecutable, ["doctor"], consumer, installedEnvironment);
+  const version = await runInstalledExecutable(installedExecutable, [CLI_ARGUMENT.VERSION], consumer, installedEnvironment);
   assert(
     version.exitCode === PROCESS_EXIT_CODE.SUCCESS && version.stdout.trim() === SERVER_VERSION,
     "Installed executable returned the wrong version",
   );
-  const help = await runInstalledExecutable([CLI_ARGUMENT.HELP], consumer, installedEnvironment);
+  const help = await runInstalledExecutable(installedExecutable, [CLI_ARGUMENT.HELP], consumer, installedEnvironment);
   assert(help.exitCode === PROCESS_EXIT_CODE.SUCCESS && help.stdout.includes(PRODUCT.NAME), "Installed executable did not return help");
-  const invalid = await runInstalledExecutable(["unknown-command"], consumer, installedEnvironment);
+  const invalid = await runInstalledExecutable(installedExecutable, ["unknown-command"], consumer, installedEnvironment);
   assert(
     invalid.exitCode === PROCESS_EXIT_CODE.FAILURE && invalid.stderr.includes(CLI_MESSAGE.UNKNOWN_COMMAND),
     "Installed executable accepted an unknown command",
@@ -119,7 +122,6 @@ try {
   }
   assert(!doctorResult.installationRoot.startsWith(sourceRoot), "Installed doctor reused the source checkout");
 
-  const installedManifest = JSON.parse(await readFile(path.join(installedRoot, "package.json"), "utf8"));
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -138,5 +140,5 @@ try {
     )}\n`,
   );
 } finally {
-  await rm(workspace, {recursive: true, force: true});
+  await removeTemporaryDirectory(workspace);
 }

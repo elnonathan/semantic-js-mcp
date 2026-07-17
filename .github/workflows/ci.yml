@@ -85,7 +85,7 @@ jobs:
               pacman --sync --refresh --sysupgrade --noconfirm ca-certificates curl git gzip ripgrep tar xz
               ;;
             suse)
-              zypper --non-interactive install ca-certificates curl git gzip ripgrep tar xz
+              zypper --non-interactive install bash ca-certificates curl git gzip ripgrep tar xz
               ;;
             *)
               echo "Unsupported Linux package family: ${{ matrix.package_family }}" >&2
@@ -98,8 +98,11 @@ jobs:
           node-version: 22
           cache: npm
       - name: Verify ripgrep
+        shell: bash
         run: rg --version
       - name: Install dependencies
+        shell: bash
         run: npm ci
       - name: Run complete release verification
+        shell: bash
         run: npm run release:verify

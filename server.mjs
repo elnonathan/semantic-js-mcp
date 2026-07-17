@@ -38,6 +38,7 @@ import {
   FORBIDDEN_PUBLIC_FIELD,
   LANGUAGE_ID,
   LIMIT_MODE,
+  LSP_COMMAND,
   LSP_METHOD,
   NODE_EVENT,
   INTERNAL_RESOLUTION_SOURCE,
@@ -56,6 +57,7 @@ import {
   TOOL,
   TOOL_DESCRIPTION,
   TOOL_ORDER,
+  TYPESCRIPT_SERVER_COMMAND,
   TYPESCRIPT_PROJECT_KIND,
   WORKSPACE_CONFIGURATION_FILE_NAMES,
   WORKSPACE_ROOT_MARKER_FILE_NAMES,
@@ -1099,9 +1101,13 @@ function normalizeLocations(value) {
   return items.map(normalizeLocation).filter(Boolean);
 }
 
+function filesAreEqual(left, right) {
+  return path.relative(path.resolve(left), path.resolve(right)) === "";
+}
+
 function locationsAreEqual(left, right) {
   return (
-    path.resolve(left.file) === path.resolve(right.file) &&
+    filesAreEqual(left.file, right.file) &&
     left.range.start.line === right.range.start.line &&
     left.range.start.column === right.range.start.column
   );
@@ -1110,7 +1116,7 @@ function locationsAreEqual(left, right) {
 async function followLocalDefinitionBinding(context, definitions) {
   if (definitions.length !== 1) return definitions;
   const [localDefinition] = definitions;
-  if (path.resolve(localDefinition.file) !== context.file) return definitions;
+  if (!filesAreEqual(localDefinition.file, context.file)) return definitions;
   const raw = await context.client.textRequest("textDocument/definition", context.file, {
     position: lspPosition(localDefinition.range.start.line, localDefinition.range.start.column),
   });
@@ -1118,6 +1124,24 @@ async function followLocalDefinitionBinding(context, definitions) {
   if (followedDefinitions.length === 0) return definitions;
   if (followedDefinitions.length === 1 && locationsAreEqual(followedDefinitions[0], localDefinition)) return definitions;
   return followedDefinitions;
+}
+
+async function sourceDefinitionsAt(context, line, column) {
+  const uri = await context.client.syncDocument(context.file);
+  const result = await context.client.request(LSP_METHOD.EXECUTE_COMMAND, {
+    command: LSP_COMMAND.GO_TO_SOURCE_DEFINITION,
+    arguments: [uri, lspPosition(line, column)],
+  });
+  return normalizeLocations(result);
+}
+
+async function typescriptServerDefinitionsAt(context, line, column) {
+  const result = await context.client.rawTsserver().request(TYPESCRIPT_SERVER_COMMAND.DEFINITION_AND_BOUND_SPAN, {
+    file: context.file,
+    line,
+    offset: column,
+  });
+  return normalizeTsserverDefinitions(result);
 }
 
 function normalizeTsserverDefinitions(value) {
@@ -1136,16 +1160,30 @@ async function definitionsAtWithoutVueTemplateFallback(file, root, line, column)
   const lspDefinitions = normalizeLocations(raw);
   if (lspDefinitions.length > 0) {
     const definitions = await followLocalDefinitionBinding(context, lspDefinitions);
-    return {context, definitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
+    const remainsAtLocalBinding =
+      definitions.length === 1 &&
+      lspDefinitions.length === 1 &&
+      locationsAreEqual(definitions[0], lspDefinitions[0]) &&
+      filesAreEqual(definitions[0].file, context.file);
+    if (!remainsAtLocalBinding) return {context, definitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
+
+    try {
+      const sourceDefinitions = await sourceDefinitionsAt(context, line, column);
+      if (sourceDefinitions.length === 0 || (sourceDefinitions.length === 1 && locationsAreEqual(sourceDefinitions[0], definitions[0]))) {
+        return {context, definitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
+      }
+      return {
+        context,
+        definitions: sourceDefinitions,
+        via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP,
+      };
+    } catch {
+      return {context, definitions, via: INTERNAL_RESOLUTION_SOURCE.NATIVE_LSP};
+    }
   }
   const project = await typescriptProjectEvidence(context);
   try {
-    const tsserverResult = await context.client.rawTsserver().request("definitionAndBoundSpan", {
-      file: context.file,
-      line,
-      offset: column,
-    });
-    const definitions = normalizeTsserverDefinitions(tsserverResult);
+    const definitions = await typescriptServerDefinitionsAt(context, line, column);
     return {
       context,
       definitions,

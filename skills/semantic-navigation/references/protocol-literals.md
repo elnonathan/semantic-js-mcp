@@ -135,8 +135,17 @@ Result schema version: `7`
 ## LSP Methods
 
 - `textDocument/diagnostic`
+- `workspace/executeCommand`
 - `textDocument/publishDiagnostics`
 - `workspace/diagnostic/refresh`
+
+## LSP Commands
+
+- `_typescript.goToSourceDefinition`
+
+## TypeScript Server Commands
+
+- `definitionAndBoundSpan`
 
 ## Accounting Status
 
