@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-17
+
+### Added
+
+- Publish release tags to npm through a protected GitHub Actions environment using short-lived OIDC credentials and automatic provenance.
+
 ### Fixed
 
 - Document and validate marketplace refresh before reinstalling an existing Codex plugin.

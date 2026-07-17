@@ -408,7 +408,7 @@ export const RESULT_SCHEMA = Object.freeze({
   VERSION: 7,
 });
 
-export const SERVER_VERSION = "0.10.0";
+export const SERVER_VERSION = "0.10.1";
 
 export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
   TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server/lib/cli.mjs",

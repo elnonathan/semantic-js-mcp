@@ -57,6 +57,7 @@ npm run check
 npm run check:runtime
 npm run check:documentation
 npm run smoke:ci
+npm run smoke:publish
 npm run smoke:negative
 npm run smoke:doctor
 npm run smoke
@@ -77,6 +78,14 @@ npm run verify:published -- <version>
 The local release gate runs every configured source, runtime, semantic, evaluation, distribution, and benchmark check and reports all failures instead of stopping at the first one. It performs no publication or installed-plugin mutation.
 
 Postpublication verification requires an explicit version and the matching `v<version>` repository tag. It queries that immutable registry version, installs it with a fresh temporary npm cache and consumer project, verifies the installed executable and manifest, then runs the installed doctor to cover MCP startup, tool discovery, TypeScript evidence, and Vue navigation. It also installs the plugin from the tag-pinned marketplace inside a temporary `CODEX_HOME` and verifies the enabled plugin version. Temporary state is removed afterward. An unavailable registry, marketplace, or network is reported as `blocked`.
+
+## npm Trusted Publishing
+
+The `publish.yml` workflow publishes tags matching `v*` from a GitHub-hosted Node.js 24 runner. It requires the protected `npm-publish` environment, verifies that the tag exactly matches the package version, runs the complete release gate, and publishes through npm Trusted Publishing with OIDC. No long-lived npm token is used. npm generates provenance automatically for the public package.
+
+Configure the npm trusted publisher for GitHub user `elnonathan`, repository `semantic-js-mcp`, workflow filename `publish.yml`, and environment `npm-publish`. Allow `npm publish` only. In package publishing access, require two-factor authentication and disallow tokens.
+
+Create and push the matching `v<version>` tag only after the release commit is on `main` and its CI matrix passes. Approve the protected environment deployment, verify the published package, and then create the matching GitHub release.
 
 ## Continuous Integration
 
