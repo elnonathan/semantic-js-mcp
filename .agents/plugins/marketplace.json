@@ -9,7 +9,7 @@
       "source": {
         "source": "npm",
         "package": "semantic-js-mcp",
-        "version": "0.10.2",
+        "version": "0.10.3",
         "registry": "https://registry.npmjs.org"
       },
       "policy": {

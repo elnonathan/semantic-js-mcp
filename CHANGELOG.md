@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-07-18
+
 ### Changed
 
 - Consolidate installation into `SETUP.md`, the shared setup procedure for people and coding agents. README now provides only a brief entry point. The procedure places guards, prerequisites, installation, and verification before troubleshooting and background; uses direct explanatory language; requires exact host and version checks; rejects partial npm extraction; and does not treat installation as permission to inspect source code.
