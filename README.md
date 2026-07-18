@@ -1,12 +1,24 @@
 # Semantic JS MCP
 
+## Setup
+
+Before running an installation command, follow [SETUP.md](SETUP.md). It is the
+single source of truth for setup by either a person or a coding agent, including
+prerequisites, host selection, installation, verification, updates, rollback,
+and removal.
+
+Semantic JS MCP requires Node.js 22 or newer and `rg` (ripgrep). It can be
+installed through the verified Codex plugin route or registered as a local
+stdio server in another compatible MCP host. Package installation alone does not configure an MCP host.
+
+After setup, see [Getting started](docs/getting-started.md) for practical
+investigation prompts and compact evidence examples.
+
 **Your coding agent is only as good as its understanding of your codebase.**
 
 Coding agents can generate code quickly, but reliable engineering requires more than reading files and matching text. They need to understand which declaration a reference belongs to, how symbols cross workspace boundaries, whether the collected evidence is complete, and whether that evidence is still accurate.
 
 Semantic JS MCP gives coding agents structured, read-only semantic context so they can navigate, review, and change code with explicit uncertainty.
-
-When a user explicitly asks a coding agent to install or configure the package, the agent should follow the [agent setup guide](AGENT_SETUP.md).
 
 Its scope is intentionally narrow: it strengthens an agent's understanding of symbol identity, types, references, diagnostics, and evidence coverage. It does not replace architectural reasoning, source inspection, dependency analysis, tests, or runtime observation.
 
@@ -20,51 +32,13 @@ For each file, it identifies the owning workspace and uses the corresponding Typ
 
 Version `0.10.2` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
 
-## Installation
-
-### Codex plugin
-
-Add the public marketplace, then install the plugin:
-
-```bash
-codex plugin marketplace add elnonathan/semantic-js-mcp
-codex plugin add semantic-js-mcp@elnonathan
-```
-
-Codex CLI 0.144.4 or newer is required for npm-backed marketplace installation. Start a new Codex session after installation. The plugin bundles both the MCP server configuration and the semantic-navigation skill.
-
-### Updating the Codex plugin
-
-Codex installs from a local snapshot of each configured marketplace. Refresh that snapshot before reinstalling so `plugin add` resolves the version currently declared by the marketplace:
-
-```bash
-codex plugin marketplace upgrade elnonathan
-codex plugin add semantic-js-mcp@elnonathan
-codex plugin list
-```
-
-`plugin add` reinstalls the plugin; a separate removal is not required. Start a new Codex session after the command reports the expected version.
-
-### MCP executable
-
-Install the package globally when using an MCP host that accepts a command-based stdio configuration:
-
-```bash
-npm install --global semantic-js-mcp
-semantic-js-mcp doctor
-```
-
-Configure the host to run `semantic-js-mcp serve`.
-
-For practical investigation prompts and compact evidence examples, see [Getting started](docs/getting-started.md).
-
 ## Runtime
 
 - Node.js 22 or newer is required.
 - Node.js 24 LTS is recommended for new installations. See the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 - `rg` (ripgrep) must be available on `PATH` for repository-wide discovery.
 - The nearest workspace TypeScript SDK is used when available; the bundled TypeScript SDK is the fallback.
-- TypeScript, `typescript-language-server`, and the Vue language server are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Source checkouts use `npm ci`; startup verifies provider entry points before accepting MCP requests.
+- TypeScript, `typescript-language-server`, and the Vue language server are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Startup verifies provider entry points before accepting MCP requests.
 - Source discovery and language selection include `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, and `.vue` files.
 - Run `npm run check:runtime` to report every required component and its resolved file path.
 
@@ -72,10 +46,10 @@ The package exposes a `semantic-js-mcp` executable. `semantic-js-mcp serve` star
 
 ## Development Setup
 
-From a source checkout:
+Complete the [source-checkout setup](SETUP.md#source-checkout), then run the
+checks applicable to the change:
 
 ```bash
-npm ci
 npm run check
 npm run check:runtime
 npm run doctor
@@ -86,34 +60,6 @@ npm run smoke:lifecycle
 ```
 
 Run `npm run benchmark` after changes to scanning, references, caching, lifecycle, or memory. Provider disposal changes can also be characterized with `npm run benchmark:lifecycle-memory`; its output declares the garbage-collection and platform measurement method. Normal analysis is local and read-only; it does not require network access after dependencies are installed.
-
-For an MCP host that accepts a direct stdio configuration, point it at the checked-out server using an absolute path:
-
-```json
-{
-  "mcpServers": {
-    "semanticjsmcp": {
-      "command": "node",
-      "args": ["/absolute/path/to/semantic-js-mcp/server.mjs"]
-    }
-  }
-}
-```
-
-The bundled [`.mcp.json`](.mcp.json) provides the relative-path configuration used when the repository is installed as a Codex plugin.
-
-When the package executable is available on the host's `PATH`, the equivalent stdio configuration is:
-
-```json
-{
-  "mcpServers": {
-    "semanticjsmcp": {
-      "command": "semantic-js-mcp",
-      "args": ["serve"]
-    }
-  }
-}
-```
 
 ## Tool Graph
 

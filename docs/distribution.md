@@ -4,22 +4,15 @@ The package manifest defines an explicit public file allowlist and exposes the `
 
 ## Codex
 
-```bash
-codex plugin marketplace add elnonathan/semantic-js-mcp
-codex plugin add semantic-js-mcp@elnonathan
-```
+The marketplace entry pins a concrete npm package version. Codex CLI 0.144.4
+is the minimum verified client for npm-backed marketplace installation. A
+release updates the package version, plugin manifest, and marketplace entry
+together.
 
-The marketplace entry pins a concrete npm package version. Codex CLI 0.144.4 is the minimum verified client for npm-backed marketplace installation. A release updates the package version, plugin manifest, and marketplace entry together.
-
-For an existing marketplace installation, refresh its local snapshot before reinstalling the plugin:
-
-```bash
-codex plugin marketplace upgrade elnonathan
-codex plugin add semantic-js-mcp@elnonathan
-codex plugin list
-```
-
-`plugin add` reinstalls the plugin selected by the refreshed marketplace. Start a new Codex session after the listed version matches the release being installed.
+Follow [Install With Codex](../SETUP.md#install-with-codex) for installation or
+update commands, version checks, restart handling, and tool verification. This
+document describes the distribution contract and does not define a second
+setup procedure.
 
 ## Executable
 
@@ -85,7 +78,7 @@ The `publish.yml` workflow publishes tags matching `v*` from a GitHub-hosted Nod
 
 Configure the npm trusted publisher for GitHub user `elnonathan`, repository `semantic-js-mcp`, workflow filename `publish.yml`, and environment `npm-publish`. Allow `npm publish` only. In package publishing access, require two-factor authentication and disallow tokens.
 
-Create and push the matching `v<version>` tag only after the release commit is on `main` and its CI matrix passes. Approve the protected environment deployment, verify the published package, and then create the matching GitHub release.
+Create and push the matching `v<version>` tag only after the release commit is on `main` and its CI matrix passes. If the protected environment requires review, approve the waiting deployment. Verify the published package before creating the matching GitHub release.
 
 ## Continuous Integration
 

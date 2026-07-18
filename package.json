@@ -28,7 +28,7 @@
     ".codex-plugin/",
     ".mcp.json",
     ".prettierrc.json",
-    "AGENT_SETUP.md",
+    "SETUP.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "ROADMAP.md",
@@ -67,8 +67,8 @@
     "verify:published": "node scripts/postpublication-smoke.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "benchmark:lifecycle-memory": "node scripts/lifecycle-memory-benchmark.mjs",
-    "format": "prettier --write \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".github/**/*.yml\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\"",
-    "format:check": "prettier --check \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".github/**/*.yml\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\""
+    "format": "prettier --write \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".github/**/*.yml\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"SETUP.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\"",
+    "format:check": "prettier --check \".codex-plugin/**/*.json\" \".agents/plugins/marketplace.json\" \".github/**/*.yml\" \".mcp.json\" \".prettierrc.json\" \"package.json\" \"package-lock.json\" \"CHANGELOG.md\" \"CONTRIBUTING.md\" \"README.md\" \"ROADMAP.md\" \"SECURITY.md\" \"SETUP.md\" \"*.mjs\" \"docs/**/*.md\" \"lib/**/*.mjs\" \"scripts/**/*.mjs\" \"skills/**/SKILL.md\" \"skills/**/agents/*.yaml\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
