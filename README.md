@@ -6,6 +6,8 @@ Coding agents can generate code quickly, but reliable engineering requires more 
 
 Semantic JS MCP gives coding agents structured, read-only semantic context so they can navigate, review, and change code with explicit uncertainty.
 
+When a user explicitly asks a coding agent to install or configure the package, the agent should follow the [agent setup guide](AGENT_SETUP.md).
+
 Its scope is intentionally narrow: it strengthens an agent's understanding of symbol identity, types, references, diagnostics, and evidence coverage. It does not replace architectural reasoning, source inspection, dependency analysis, tests, or runtime observation.
 
 **Better agents begin with better evidence.**
@@ -90,7 +92,7 @@ For an MCP host that accepts a direct stdio configuration, point it at the check
 ```json
 {
   "mcpServers": {
-    "semantic-js-mcp": {
+    "semanticjsmcp": {
       "command": "node",
       "args": ["/absolute/path/to/semantic-js-mcp/server.mjs"]
     }
@@ -105,7 +107,7 @@ When the package executable is available on the host's `PATH`, the equivalent st
 ```json
 {
   "mcpServers": {
-    "semantic-js-mcp": {
+    "semanticjsmcp": {
       "command": "semantic-js-mcp",
       "args": ["serve"]
     }

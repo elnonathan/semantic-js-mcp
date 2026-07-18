@@ -10,6 +10,10 @@ Semantic JS MCP adds static semantic evidence to an agent's existing code invest
 
 > Review the authentication changes in this diff. Use semantic evidence to verify every material symbol and cross-workspace reference, corroborate reachability with text search and direct source inspection, and distinguish introduced defects from pre-existing behavior.
 
+## Review Combination Logic
+
+> Review this precedence, fallback, normalization, or merge change. Identify every producer of the combined domain value, recover the invariant encoded by existing helpers and direct consumers, verify the discovered symbols and references with semantic evidence, and test a boundary case that could disprove the proposed rule.
+
 ## Check Current Diagnostics
 
 > Check current diagnostics for `src/handler.ts`. Treat the file as clean only if the language server confirms the current document snapshot; otherwise report the result as untrusted and explain the required follow-up.

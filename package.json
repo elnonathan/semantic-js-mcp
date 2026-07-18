@@ -28,6 +28,7 @@
     ".codex-plugin/",
     ".mcp.json",
     ".prettierrc.json",
+    "AGENT_SETUP.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "ROADMAP.md",

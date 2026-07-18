@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add `AGENT_SETUP.md` with safe installation, verification, update, rollback, and removal steps for Codex and standard stdio MCP hosts.
+- Expand semantic-navigation guidance for values assembled from multiple sources so agents inspect existing merge rules, related helpers, consumers, and boundary cases before changing precedence or fallback behavior.
+
 ## [0.10.1] - 2026-07-17
 
 ### Added

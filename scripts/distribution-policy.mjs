@@ -2,6 +2,7 @@ export const REQUIRED_PACKAGE_FILE = Object.freeze({
   PACKAGE_MANIFEST: "package.json",
   PRETTIER_CONFIGURATION: ".prettierrc.json",
   README: "README.md",
+  AGENT_SETUP: "AGENT_SETUP.md",
   LICENSE: "LICENSE",
   CLI: "cli.mjs",
   SERVER: "server.mjs",

@@ -35,7 +35,9 @@ export function evaluateDocumentation(documents) {
 
   const headingRequirements = [
     [DOCUMENTATION_FILE.README, DOCUMENTATION_REQUIREMENT.README_HEADINGS],
+    [DOCUMENTATION_FILE.AGENT_SETUP, DOCUMENTATION_REQUIREMENT.AGENT_SETUP_HEADINGS],
     [DOCUMENTATION_FILE.GETTING_STARTED, DOCUMENTATION_REQUIREMENT.GETTING_STARTED_HEADINGS],
+    [DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL, DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_HEADINGS],
   ];
   for (const [file, requiredHeadings] of headingRequirements) {
     if (documents[file] === undefined) continue;
@@ -63,6 +65,26 @@ export function evaluateDocumentation(documents) {
     for (const literal of DOCUMENTATION_REQUIREMENT.GETTING_STARTED_LITERALS) {
       if (gettingStarted.includes(literal)) continue;
       findings.push({file: DOCUMENTATION_FILE.GETTING_STARTED, reason: DOCUMENTATION_REASON.LITERAL_MISSING, literal});
+    }
+  }
+
+  const agentSetup = documents[DOCUMENTATION_FILE.AGENT_SETUP];
+  if (agentSetup !== undefined) {
+    for (const literal of DOCUMENTATION_REQUIREMENT.AGENT_SETUP_LITERALS) {
+      if (agentSetup.includes(literal)) continue;
+      findings.push({file: DOCUMENTATION_FILE.AGENT_SETUP, reason: DOCUMENTATION_REASON.LITERAL_MISSING, literal});
+    }
+  }
+
+  const semanticNavigationSkill = documents[DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL];
+  if (semanticNavigationSkill !== undefined) {
+    for (const literal of DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS) {
+      if (semanticNavigationSkill.includes(literal)) continue;
+      findings.push({
+        file: DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL,
+        reason: DOCUMENTATION_REASON.LITERAL_MISSING,
+        literal,
+      });
     }
   }
 

@@ -131,6 +131,24 @@ Omitted collection limits still mean unlimited. The server never inserts a hidde
 4. Inspect focused tests for asserted behavior; run them when permitted.
 5. Re-read cited locations before presenting a finding.
 
+### Preserve Combination Invariants
+
+When a change combines multiple sources into one domain value or introduces
+precedence, fallback, normalization, ordering, or merge logic:
+
+1. Identify every producer of the value, not only the source involved in the
+   reported example.
+2. Find existing comparison, normalization, fallback, and combination helpers
+   and state the invariant they encode.
+3. Inspect direct consumers and focused tests to confirm how the combined value
+   is treated as a contract.
+4. Exercise a boundary case that could disprove the proposed precedence or
+   merge rule.
+
+Semantic tools verify the identities and references discovered during this
+work. Use text search, direct source inspection, tests, and domain reasoning for
+conceptual relationships that an LSP cannot establish.
+
 An actionable finding requires a reachable path, a violated contract, and concrete impact. For commit or pull-request reviews, compare with the exact parent and classify material conclusions as `introduced`, `modified`, or `pre-existing`.
 
 Empty symbol, reference, or diagnostic results are evidence to investigate. Use `collection`, `textSearch`, `rg`, and direct inspection to establish the supported conclusion.
