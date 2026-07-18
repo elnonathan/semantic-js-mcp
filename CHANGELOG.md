@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-07-17
+
 ### Added
 
 - Add `AGENT_SETUP.md` with safe installation, verification, update, rollback, and removal steps for Codex and standard stdio MCP hosts.
