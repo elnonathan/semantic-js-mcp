@@ -164,6 +164,10 @@ try {
   if (diagnostics.result.evidence.status === EVIDENCE_STATUS.UNTRUSTED) {
     assert(diagnostics.collection.status === COLLECTION_STATUS.PARTIAL, "Untrusted diagnostics claimed complete collection");
     assert(
+      diagnostics.result.diagnosticUse?.usableAsCurrentDocumentDiagnosticEvidence === false,
+      "Untrusted diagnostics claimed usability as current-document evidence",
+    );
+    assert(
       Object.values(DIAGNOSTIC_EVIDENCE_REASON).includes(diagnostics.result.evidence.reason),
       "Untrusted diagnostics used a non-canonical reason",
     );
@@ -224,6 +228,7 @@ try {
             observed: {
               collectionStatus: diagnostics.collection.status,
               evidenceStatus: diagnostics.result.evidence.status,
+              usableAsCurrentDocumentDiagnosticEvidence: diagnostics.result.diagnosticUse.usableAsCurrentDocumentDiagnosticEvidence,
             },
             expected: {
               collectionStatus:

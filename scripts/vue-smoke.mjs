@@ -15,6 +15,7 @@ import {
   DEFINITION_RESOLUTION_METHOD,
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
+  DIAGNOSTIC_GUIDANCE,
   DIAGNOSTIC_LANGUAGE,
   DIAGNOSTIC_PROVIDER,
   DIAGNOSTIC_REGION,
@@ -159,6 +160,16 @@ try {
   ) {
     throw new Error("Vue diagnostic pull omitted its snapshot-confirmation reason");
   }
+  deepStrictEqual(
+    vueDiagnosticsResponse.structuredContent?.result?.diagnosticUse,
+    {
+      currentDocumentDiagnosticsAvailable: true,
+      unconfirmedDiagnosticReportAvailable: false,
+      usableAsCurrentDocumentDiagnosticEvidence: true,
+      guidance: DIAGNOSTIC_GUIDANCE.CURRENT_DOCUMENT_DIAGNOSTICS_AVAILABLE,
+    },
+    "Vue diagnostic pull returned inconsistent usage guidance",
+  );
   const provenanceDiagnostics = await client.callTool({
     name: TOOL.DIAGNOSTICS,
     arguments: {file: diagnosticComponent, root: workspace},

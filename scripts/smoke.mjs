@@ -9,6 +9,7 @@ import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
 import {fileIdentity, locationKey, locationKeyAt, locationKeyForOperatingSystem} from "../lib/file-identity.mjs";
+import {diagnosticUseSummary} from "../lib/diagnostic-evidence.mjs";
 import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
@@ -22,6 +23,7 @@ import {
   DIAGNOSTIC_REGION,
   EVIDENCE_STATUS,
   DIAGNOSTIC_FRESHNESS,
+  DIAGNOSTIC_GUIDANCE,
   ENVIRONMENT_VARIABLE,
   ERROR_CODE,
   FINGERPRINT_FORMAT,
@@ -47,6 +49,35 @@ const forbiddenPublicKeys = new Set(FORBIDDEN_PUBLIC_FIELD);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+const unversionedDiagnosticUse = diagnosticUseSummary({versionConfirmed: false, reportReceived: true});
+deepStrictEqual(
+  unversionedDiagnosticUse,
+  {
+    currentDocumentDiagnosticsAvailable: false,
+    unconfirmedDiagnosticReportAvailable: true,
+    usableAsCurrentDocumentDiagnosticEvidence: false,
+    guidance: DIAGNOSTIC_GUIDANCE.UNCONFIRMED_DIAGNOSTIC_REPORT_AVAILABLE,
+  },
+  "Unversioned diagnostic reports did not remain context-only",
+);
+const unavailableDiagnosticUse = diagnosticUseSummary({versionConfirmed: false, reportReceived: false});
+deepStrictEqual(
+  unavailableDiagnosticUse,
+  {
+    currentDocumentDiagnosticsAvailable: false,
+    unconfirmedDiagnosticReportAvailable: false,
+    usableAsCurrentDocumentDiagnosticEvidence: false,
+    guidance: DIAGNOSTIC_GUIDANCE.CURRENT_DOCUMENT_DIAGNOSTICS_UNAVAILABLE,
+  },
+  "Missing current-document reports did not remain unavailable as validation",
+);
+
+function assertDiagnosticUse(result, message) {
+  const versionConfirmed = result.evidence.status === EVIDENCE_STATUS.VERIFIED;
+  const reportReceived = versionConfirmed || result.unconfirmedDiagnosticReport?.reportReceived === true;
+  deepStrictEqual(result.diagnosticUse, diagnosticUseSummary({versionConfirmed, reportReceived}), message);
 }
 
 const windowsLocation = {
@@ -396,6 +427,7 @@ try {
     "Concurrent diagnostics disagreed about snapshot evidence",
   );
   const initialDiagnosticsVerified = initialDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED;
+  assertDiagnosticUse(initialDiagnostics.result, "Initial diagnostics returned inconsistent usage guidance");
   assert(
     initialDiagnostics.collection.status === (initialDiagnosticsVerified ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL),
     "Diagnostics evidence status and collection status disagree",
@@ -411,6 +443,18 @@ try {
   );
   if (!initialDiagnosticsVerified) {
     assert(initialDiagnostics.result.unconfirmedDiagnosticReport, "Untrusted diagnostics omitted their separated report");
+    if (initialDiagnostics.result.evidence.reason === DIAGNOSTIC_EVIDENCE_REASON.LANGUAGE_SERVER_VERSION_NOT_REPORTED) {
+      assert(
+        initialDiagnostics.result.diagnosticUse.unconfirmedDiagnosticReportAvailable === true,
+        "Unversioned diagnostics did not expose their unconfirmed report",
+      );
+    }
+    if (initialDiagnostics.result.evidence.reason === DIAGNOSTIC_EVIDENCE_REASON.LANGUAGE_SERVER_DID_NOT_REPORT_CURRENT_DOCUMENT) {
+      assert(
+        initialDiagnostics.result.diagnosticUse.unconfirmedDiagnosticReportAvailable === false,
+        "Missing diagnostics claimed that an unconfirmed report was available",
+      );
+    }
   }
 
   const textCount = assertResult(
@@ -850,6 +894,7 @@ try {
     ].join("\n"),
   );
   const supersededDiagnostics = assertResult(await supersededDiagnosticsPromise, TOOL.DIAGNOSTICS);
+  assertDiagnosticUse(supersededDiagnostics.result, "Superseded diagnostics returned inconsistent usage guidance");
   assert(
     supersededDiagnostics.result.evidence.status === EVIDENCE_STATUS.UNTRUSTED,
     "Diagnostics trusted content that changed during acquisition",
@@ -864,6 +909,7 @@ try {
   ]);
   const changedDiagnostics = assertResult(changedDiagnosticsResponse, TOOL.DIAGNOSTICS);
   const concurrentChangedDiagnostics = assertResult(concurrentChangedDiagnosticsResponse, TOOL.DIAGNOSTICS);
+  assertDiagnosticUse(changedDiagnostics.result, "Changed diagnostics returned inconsistent usage guidance");
   deepStrictEqual(
     concurrentChangedDiagnostics.result.document,
     changedDiagnostics.result.document,
@@ -930,6 +976,7 @@ try {
         declarationExclusionAccounting: "ok",
         nodeModuleExtensions: "ok",
         diagnosticVersionReporting: "ok",
+        actionableDiagnosticUse: "ok",
         sharedDiagnosticAcquisition: "ok",
         diagnosticContentFreshness: "ok",
         diagnosticProvenance: "ok",

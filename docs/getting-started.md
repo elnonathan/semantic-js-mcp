@@ -56,15 +56,25 @@ Inspect the unresolved candidates and relevant source before making a coverage c
 
 ```yaml
 result:
+  diagnosticUse:
+    currentDocumentDiagnosticsAvailable: false
+    unconfirmedDiagnosticReportAvailable: false
+    usableAsCurrentDocumentDiagnosticEvidence: false
+    guidance: Current-document diagnostics are unavailable. Do not interpret this as a clean file. Run applicable repository-native typecheck, compile, or focused test commands.
   evidence:
     status: untrusted
     reason: language-server-did-not-report-current-document
   diagnosticsForCurrentDocument: null
+  unconfirmedDiagnosticReport:
+    reportReceived: false
 collection:
   status: partial
 ```
 
-An empty unconfirmed report is not a clean diagnostic result.
+When `usableAsCurrentDocumentDiagnosticEvidence` is false, use any unconfirmed
+items only as context. Run the repository's applicable typecheck, compile, or
+focused test commands before making a validation claim. An empty or unavailable
+unconfirmed report is not a clean diagnostic result.
 
 ### Startup Failure
 

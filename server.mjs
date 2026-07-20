@@ -12,6 +12,7 @@ import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
 import {fileIdentity, locationKey, locationKeyAt} from "./lib/file-identity.mjs";
+import {diagnosticUseSummary} from "./lib/diagnostic-evidence.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {collectStableSnapshot} from "./lib/stable-collection.mjs";
@@ -29,6 +30,7 @@ import {
   DIAGNOSTIC_LANGUAGE,
   DIAGNOSTIC_PROVIDER,
   DIAGNOSTIC_REGION,
+  DIAGNOSTIC_RESULT_FIELD,
   DIAGNOSTIC_SEVERITY,
   EVIDENCE_STATUS,
   ENVIRONMENT_VARIABLE,
@@ -2682,6 +2684,7 @@ server.registerTool(
       return toolResult(tool, {
         request: {file: context.file, searchScope: SEARCH_SCOPE.DOCUMENT, resultLimit: normalizedLimit(maxResults)},
         result: {
+          [DIAGNOSTIC_RESULT_FIELD.DIAGNOSTIC_USE]: diagnosticUseSummary({versionConfirmed, reportReceived: report.reportReceived}),
           provenance: {provider: provenance.provider, documentLanguage: provenance.documentLanguage},
           evidence: {
             status: versionConfirmed ? EVIDENCE_STATUS.VERIFIED : EVIDENCE_STATUS.UNTRUSTED,
@@ -2691,10 +2694,11 @@ server.registerTool(
             version: report.documentVersion,
             contentFingerprint: publicContentFingerprint(report.documentContentFingerprint),
           },
-          diagnosticsForCurrentDocument: versionConfirmed ? diagnosticReport : null,
-          unconfirmedDiagnosticReport: versionConfirmed
+          [DIAGNOSTIC_RESULT_FIELD.DIAGNOSTICS_FOR_CURRENT_DOCUMENT]: versionConfirmed ? diagnosticReport : null,
+          [DIAGNOSTIC_RESULT_FIELD.UNCONFIRMED_DIAGNOSTIC_REPORT]: versionConfirmed
             ? undefined
             : {
+                [DIAGNOSTIC_RESULT_FIELD.REPORT_RECEIVED]: report.reportReceived,
                 ...diagnosticReport,
                 languageServerReportedDocumentVersion: report.reportedDocumentVersion,
                 freshness: report.freshness,

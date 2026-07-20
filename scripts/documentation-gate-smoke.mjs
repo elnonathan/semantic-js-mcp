@@ -198,6 +198,69 @@ for (const [literal, message] of [
   ],
   ["Do not start `semantic-js-mcp serve` manually.", "Missing manual stdio startup prohibition was accepted"],
   ["Choose exactly one installation route.", "Missing single-route boundary was accepted"],
+  ["Use the language of the user's latest message for explanations, questions,", "Missing user-language response rule was accepted"],
+  [
+    "Complete Sections 1.1 through 1.4 before invoking any terminal, filesystem, package-manager, or host tool.",
+    "Missing pre-tool authority gate was accepted",
+  ],
+  ["does not authorize a tool call.", "Missing operation authorization boundary was accepted"],
+  ["Record exactly one operation: `verification`.", "Missing verification operation was accepted"],
+  [
+    "Use a direct integration only after positive evidence identifies the application running this setup session.",
+    "Missing positive direct-host evidence rule was accepted",
+  ],
+  [
+    "If no documented direct integration is positively identified, record `generic stdio` and continue without asking the user to identify the agent.",
+    "Missing automatic generic fallback was accepted",
+  ],
+  ["The host application and the host route are different facts.", "Missing host-application and route distinction was accepted"],
+  ["The host route does not identify the server source.", "Missing host-route and server-source distinction was accepted"],
+  ["The application running the agent can also be the MCP host.", "Missing current-application host rule was accepted"],
+  ["Recommended target host: `<application>` using `generic stdio`.", "Missing generic target-host recommendation was accepted"],
+  [
+    "Do not repeatedly ask for the application name after positive session evidence already identifies it.",
+    "Missing repeated host-question prohibition was accepted",
+  ],
+  ["Do not present direct integrations as a menu.", "Missing direct-integration menu prohibition was accepted"],
+  ["The presence of an installed host executable is not positive host evidence.", "Missing executable identity prohibition was accepted"],
+  ["continue only with the recorded host route", "Missing maintenance host-route guard was accepted"],
+  ["and server source for the existing installation.", "Missing maintenance server-source guard was accepted"],
+  [
+    "Do not use `npx`, `npm exec`, `@latest`, or an npm cache as an installation route.",
+    "Missing ephemeral installation prohibition was accepted",
+  ],
+  ["Do not pipe JSON-RPC messages", "Missing manual JSON-RPC prohibition was accepted"],
+  [
+    "A manually started server does not prove that the configured host application loaded the MCP tools.",
+    "Missing host-integration proof boundary was accepted",
+  ],
+  ["Source checkout registration is not supported", "Missing Codex source-checkout boundary was accepted"],
+  ["When the recorded host route is `Codex direct`, the agent may run the", "Missing Codex prerequisite command ownership was accepted"],
+  [
+    "I cannot identify the current host application. Which application should I configure?",
+    "Missing unknown-host configuration question was accepted",
+  ],
+  ["record `user` as the command runner.", "Missing generic command-runner record was accepted"],
+  ["low side-effect risk, but they are not sandbox-neutral evidence:", "Missing sandbox-neutral version-check boundary was accepted"],
+  ["The agent must not perform even read-only local checks.", "Missing generic local-inspection prohibition was accepted"],
+  ["A command name is not enough to infer its argument grammar.", "Missing host-command grammar guard was accepted"],
+  ["Do not construct the add command unless Section 5.1 recorded its exact current", "Missing add-command grammar checkpoint was accepted"],
+  ["An added-entry message is not enough.", "Missing saved-entry validation guard was accepted"],
+  ["A host status of `failed` is a failure, not an expected pre-restart state.", "Missing failed-host-status guard was accepted"],
+  ["Use `lsp_document_symbols` on that file as the first functional", "Missing bounded functional-test guidance was accepted"],
+  ["global executable checks for a source checkout.", "Missing source-checkout verification boundary was accepted"],
+  ["search the user's home directory or unrelated directories for a checkout.", "Missing source-checkout search prohibition was accepted"],
+  [
+    "A similarly named file is not evidence of a Semantic JS MCP installation.",
+    "Missing similarly-named-file evidence boundary was accepted",
+  ],
+  ["Before constructing a removal command, confirm the exact remove subcommand", "Missing removal-command grammar guard was accepted"],
+  ["do not run the global npm", "Missing source-checkout removal boundary was accepted"],
+  [
+    "Before constructing a source-checkout registration command, confirm the exact",
+    "Missing source-checkout registration grammar guard was accepted",
+  ],
+  ["report that the source checkout is ready and stop.", "Missing no-host source-checkout outcome was accepted"],
   ["No source-code call is required", "Missing installation authority boundary was accepted"],
 ]) {
   const missingInstruction = {
@@ -228,6 +291,39 @@ strictEqual(
   ),
   true,
   "Missing combination-invariant guidance was accepted",
+);
+
+const missingDiagnosticExampleGuidance = {
+  ...valid,
+  [DOCUMENTATION_FILE.GETTING_STARTED]: valid[DOCUMENTATION_FILE.GETTING_STARTED].replace(
+    DOCUMENTATION_REQUIREMENT.GETTING_STARTED_LITERALS[3],
+    "",
+  ),
+};
+strictEqual(
+  evaluateDocumentation(missingDiagnosticExampleGuidance).some(
+    (finding) =>
+      finding.reason === DOCUMENTATION_REASON.LITERAL_MISSING && finding.literal === DOCUMENTATION_REQUIREMENT.GETTING_STARTED_LITERALS[3],
+  ),
+  true,
+  "Missing untrusted-diagnostic example guidance was accepted",
+);
+
+const missingDiagnosticSkillGuidance = {
+  ...valid,
+  [DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL]: valid[DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL].replace(
+    DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[4],
+    "",
+  ),
+};
+strictEqual(
+  evaluateDocumentation(missingDiagnosticSkillGuidance).some(
+    (finding) =>
+      finding.reason === DOCUMENTATION_REASON.LITERAL_MISSING &&
+      finding.literal === DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[4],
+  ),
+  true,
+  "Missing unconfirmed-diagnostic skill guidance was accepted",
 );
 
 const missingTrustedPublishingPolicy = {
@@ -275,8 +371,42 @@ process.stdout.write(
       missingSetup: "rejected",
       missingSetupSafetyBoundary: "rejected",
       missingGenericServerName: "rejected",
+      missingUserLanguageResponseRule: "rejected",
       missingCodexMarketplaceRefresh: "rejected",
+      missingPreToolAuthorityGate: "rejected",
+      missingOperationAuthorizationBoundary: "rejected",
+      missingVerificationOperation: "rejected",
+      missingPositiveDirectHostEvidence: "rejected",
+      missingAutomaticGenericFallback: "rejected",
+      missingHostApplicationRouteDistinction: "rejected",
+      missingHostRouteServerSourceDistinction: "rejected",
+      missingCurrentApplicationHostRule: "rejected",
+      missingGenericTargetHostRecommendation: "rejected",
+      missingRepeatedHostQuestionProhibition: "rejected",
+      missingDirectIntegrationMenuProhibition: "rejected",
+      missingExecutableIdentityProhibition: "rejected",
+      missingMaintenanceRouteOwnershipGuard: "rejected",
+      missingEphemeralInstallationProhibition: "rejected",
+      missingManualJsonRpcProhibition: "rejected",
+      missingHostIntegrationProofBoundary: "rejected",
+      missingGenericConfigurationQuestion: "rejected",
+      missingGenericCommandRunnerRecord: "rejected",
+      missingSandboxNeutralVersionCheckBoundary: "rejected",
+      missingGenericLocalInspectionProhibition: "rejected",
+      missingHostCommandGrammarGuard: "rejected",
+      missingAddCommandGrammarCheckpoint: "rejected",
+      missingSavedEntryValidationGuard: "rejected",
+      missingFailedHostStatusGuard: "rejected",
+      missingBoundedFunctionalTestGuidance: "rejected",
+      missingSourceCheckoutVerificationBoundary: "rejected",
+      missingSourceCheckoutSearchProhibition: "rejected",
+      missingSimilarlyNamedFileEvidenceBoundary: "rejected",
+      missingRemovalCommandGrammarGuard: "rejected",
+      missingSourceCheckoutRemovalBoundary: "rejected",
+      missingSourceCheckoutRegistrationGrammarGuard: "rejected",
       missingCombinationInvariant: "rejected",
+      missingDiagnosticExampleGuidance: "rejected",
+      missingDiagnosticSkillGuidance: "rejected",
       missingTrustedPublishingPolicy: "rejected",
       missingPostpublicationOrder: "rejected",
       privateCoordination: "rejected",

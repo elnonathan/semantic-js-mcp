@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-07-20
+
+### Changed
+
+- Make `lsp_diagnostics` state explicitly whether current-document diagnostics are available, whether an unconfirmed provider report exists, and whether the result is usable as current-document diagnostic evidence. Untrusted results now direct agents to repository-native validation without treating missing or stale diagnostics as a clean file.
+- Rework setup into a numbered procedure that establishes command authority before any local tool call, separates the host application from its installation route, recommends the positively identified current application as the generic stdio target for confirmation, makes every generic-host command and configuration action user-run, rejects cross-route and temporary `npx` installation, and hands sandbox-blocked work back to the user without changing permissions or installation paths.
+- Add an explicit verification-only operation, distinguish a host route from its Codex plugin, global-package, or source-checkout server source, require exact host-command help before registration or removal, reject saved commands or connection states that do not match the intended stdio entry, and keep optional functional tests scoped to one confirmed source file.
+- Keep setup responses in the user's language and retain user-run version checks for generic hosts because low-risk commands can still observe a sandbox-specific runtime instead of the user's actual environment.
+
 ## [0.10.3] - 2026-07-18
 
 ### Changed

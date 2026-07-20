@@ -205,7 +205,7 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.DEFINITION]: `Resolves definitions for one source position. Use ${TOOL.HOVER} for type information or ${TOOL.COUNT_REFERENCES} for impact scope.`,
   [TOOL.HOVER]: `Returns inferred type information and documentation for one source position. Use ${TOOL.DEFINITION} for declaration identity.`,
   [TOOL.DIAGNOSTICS]:
-    "Returns diagnostics for one file and marks evidence untrusted when the current document snapshot cannot be confirmed.",
+    "Returns diagnostics for one file, separates unconfirmed context, and states whether the result is usable as current-document diagnostic evidence.",
   [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
   [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts plus explicit semantic follow-up status for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
@@ -299,6 +299,26 @@ export const DIAGNOSTIC_EVIDENCE_REASON = Object.freeze({
   LANGUAGE_SERVER_VERSION_NOT_REPORTED: "language-server-version-not-reported",
   LANGUAGE_SERVER_REPORTED_DIFFERENT_VERSION: "language-server-reported-different-version",
   LANGUAGE_SERVER_DID_NOT_REPORT_CURRENT_DOCUMENT: "language-server-did-not-report-current-document",
+});
+
+export const DIAGNOSTIC_RESULT_FIELD = Object.freeze({
+  DIAGNOSTIC_USE: "diagnosticUse",
+  DIAGNOSTICS_FOR_CURRENT_DOCUMENT: "diagnosticsForCurrentDocument",
+  UNCONFIRMED_DIAGNOSTIC_REPORT: "unconfirmedDiagnosticReport",
+  REPORT_RECEIVED: "reportReceived",
+  CURRENT_DOCUMENT_DIAGNOSTICS_AVAILABLE: "currentDocumentDiagnosticsAvailable",
+  UNCONFIRMED_DIAGNOSTIC_REPORT_AVAILABLE: "unconfirmedDiagnosticReportAvailable",
+  USABLE_AS_CURRENT_DOCUMENT_DIAGNOSTIC_EVIDENCE: "usableAsCurrentDocumentDiagnosticEvidence",
+  GUIDANCE: "guidance",
+});
+
+export const DIAGNOSTIC_GUIDANCE = Object.freeze({
+  CURRENT_DOCUMENT_DIAGNOSTICS_AVAILABLE:
+    "Use these as current-document diagnostic evidence, not proof of correctness. Run applicable repository-native checks before claiming correctness.",
+  UNCONFIRMED_DIAGNOSTIC_REPORT_AVAILABLE:
+    "Treat the unconfirmed report as context only. It is not current-document, compile, or type validation. Run applicable repository-native typecheck, compile, or focused test commands.",
+  CURRENT_DOCUMENT_DIAGNOSTICS_UNAVAILABLE:
+    "Current-document diagnostics are unavailable. Do not interpret this as a clean file. Run applicable repository-native typecheck, compile, or focused test commands.",
 });
 
 export const CONTENT_FRESHNESS = Object.freeze({
@@ -408,7 +428,7 @@ export const RESULT_SCHEMA = Object.freeze({
   VERSION: 7,
 });
 
-export const SERVER_VERSION = "0.10.3";
+export const SERVER_VERSION = "0.10.4";
 
 export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
   TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server/lib/cli.mjs",

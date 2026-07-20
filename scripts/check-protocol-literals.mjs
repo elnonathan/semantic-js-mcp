@@ -20,9 +20,11 @@ import {
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
   DIAGNOSTIC_FRESHNESS,
+  DIAGNOSTIC_GUIDANCE,
   DIAGNOSTIC_LANGUAGE,
   DIAGNOSTIC_PROVIDER,
   DIAGNOSTIC_REGION,
+  DIAGNOSTIC_RESULT_FIELD,
   DIAGNOSTIC_SEVERITY,
   DOCTOR_CHECK,
   DOCTOR_DISTRIBUTION_ACCEPTED_STATUS,
@@ -67,7 +69,7 @@ import {
 } from "../protocol.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const runtimeSourceFiles = ["server.mjs", "cli.mjs", "lib/runtime.mjs", "lib/doctor.mjs"];
+const runtimeSourceFiles = ["server.mjs", "cli.mjs", "lib/runtime.mjs", "lib/doctor.mjs", "lib/diagnostic-evidence.mjs"];
 const runtimeSources = await Promise.all(
   runtimeSourceFiles.map(async (file) => ({
     file,
@@ -102,6 +104,8 @@ const groups = [
   DIAGNOSTIC_LANGUAGE,
   DIAGNOSTIC_SEVERITY,
   DIAGNOSTIC_EVIDENCE_REASON,
+  DIAGNOSTIC_RESULT_FIELD,
+  DIAGNOSTIC_GUIDANCE,
   EVIDENCE_STATUS,
   CONTENT_FRESHNESS,
   ERROR_CODE,
