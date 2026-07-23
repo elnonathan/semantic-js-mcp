@@ -24,6 +24,11 @@ All notable changes to this project will be documented in this file.
 - Declare `@vue/typescript-plugin` as a direct, bundled dependency (previously relied on as a transitive).
 - Update `@modelcontextprotocol/sdk` to 1.29.0, `@vue/language-server` to 3.3.8, `typescript-language-server` to 5.3.0, `@vue/compiler-sfc` to 3.5.40, `zod` to 4.4.3, and `prettier` to 3.9.6. `npm audit` reports no known vulnerabilities.
 
+### Added
+
+- Honor the MCP `roots` capability. When the host advertises `roots` (for example Claude Code), the server unions the host-provided workspace directories into the boundary after initialization and on `roots/list_changed`, so no `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` is needed on those hosts. Authority stays with the host; the unset, no-roots default stays restrictive.
+- Add a Claude Code plugin and marketplace catalog (`.claude-plugin/`) so the MCP server and the semantic-navigation skill install with `/plugin marketplace add` and `/plugin install`. The `claude mcp add` route remains available for the server alone.
+
 ## [0.10.4] - 2026-07-20
 
 ### Changed

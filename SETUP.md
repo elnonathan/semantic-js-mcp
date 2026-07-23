@@ -59,6 +59,7 @@ Section 1.2.
 Record exactly one host route:
 
 - `Codex direct`;
+- `Claude Code direct`;
 - `generic stdio`; or
 - `no host`.
 
@@ -71,6 +72,7 @@ The server source is a third fact. It records how the host obtains Semantic JS
 MCP:
 
 - `Codex plugin`;
+- `Claude Code plugin`;
 - `global npm package`; or
 - `source checkout`.
 
@@ -97,7 +99,9 @@ Apply these decisions in order:
    requested, record `no host`.
 2. Otherwise, if positive evidence identifies Codex as the application running
    this setup session, record `Codex direct`.
-3. Otherwise, record `generic stdio`.
+3. Otherwise, if positive evidence identifies Claude Code as the application
+   running this setup session, record `Claude Code direct`.
+4. Otherwise, record `generic stdio`.
 
 If no documented direct integration is positively identified, record `generic stdio` and continue without asking the user to identify the agent.
 
@@ -135,10 +139,10 @@ The output of `codex --version`, `codex plugin marketplace list`, or
 `codex plugin list` proves only that the Codex CLI can be inspected. It does
 not authorize the `Codex direct` route.
 
-Codex is the only direct integration documented in this version. A future
-direct integration must define its own positive host evidence and recorded
-route. Until then, every session without positive Codex evidence uses
-`generic stdio`.
+Codex and Claude Code are the direct integrations documented in this version. A
+future direct integration must define its own positive host evidence and
+recorded route. Until then, every session without positive Codex or Claude Code
+evidence uses `generic stdio`.
 
 Continue at Section 1.3.
 
@@ -151,6 +155,7 @@ Apply that choice to a new installation.
 For a new installation, record the server source from the selected path:
 
 - `Codex direct` uses `Codex plugin`;
+- `Claude Code direct` uses `Claude Code plugin`;
 - `generic stdio` uses `global npm package`; and
 - the `source checkout` operation uses `source checkout`.
 
@@ -166,7 +171,7 @@ Do not uninstall the global package merely because the host route is `generic
 stdio`.
 
 For verification, inspect only the recorded host entry and server source, then
-continue at Section 6.
+continue at Section 7.
 Do not install, update, remove, or reconfigure anything.
 
 For an update, rollback, or removal, continue only with the recorded host route
@@ -179,12 +184,13 @@ server source.
   `Codex direct`,
   stop and report `blocked`. Source checkout registration is not supported by the Codex plugin route.
 - If the operation is `source checkout` and the recorded host route is
-  `no host`, use Section 11.
+  `no host`, use Section 12.
 - If the operation is `source checkout` and the recorded host route is
-  `generic stdio`, use Section 11.
-- If the operation is `verification`, use Section 6.
+  `generic stdio`, use Section 12.
+- If the operation is `verification`, use Section 7.
 - If the recorded host route is `Codex direct`, use Section 4.
-- If the recorded host route is `generic stdio`, use Section 5.
+- If the recorded host route is `Claude Code direct`, use Section 5.
+- If the recorded host route is `generic stdio`, use Section 6.
 
 Do not combine the Codex, generic package, and source checkout routes.
 
@@ -291,13 +297,13 @@ Read the complete output of the command. Do not use only its exit code.
 - If the step's success condition is met and no unhandled error is present,
   continue to the next numbered step.
 - If the output is incomplete, ask for the complete output and wait.
-- If an agent-run command was blocked by its sandbox, continue at Section 7.2.
+- If an agent-run command was blocked by its sandbox, continue at Section 8.2.
 - If another command failed, the configuration format is unknown, or
   installation is incomplete, stop and report `blocked`.
 - If a step says to obtain approval, wait for that approval.
 
 A later successful command does not erase an earlier incomplete installation.
-Only the cleanup and clean reinstall described in Section 7.1 can clear it.
+Only the cleanup and clean reinstall described in Section 8.1 can clear it.
 
 Setup changes software or MCP configuration on the user's machine. Inspect
 existing MCP configuration before editing it, preserve every unrelated server
@@ -308,11 +314,11 @@ Setup does not authorize source-code analysis. No source-code call is required
 to verify installation unless the user separately requests a functional test.
 
 - For a new installation, continue at Section 2.
-- For verification, continue at Section 6.
-- For an update, continue at Section 8.
-- For a rollback, continue at Section 9.
-- For removal, continue at Section 10.
-- For a source checkout, continue at Section 11.
+- For verification, continue at Section 7.
+- For an update, continue at Section 9.
+- For a rollback, continue at Section 10.
+- For removal, continue at Section 11.
+- For a source checkout, continue at Section 12.
 
 ## Prerequisites
 
@@ -388,9 +394,9 @@ Do not silently substitute `latest`, an installed version, or a newer version.
 
 #### 3.3 Choose The Next Section
 
-- For an update, return to Section 8.2.
+- For an update, return to Section 9.2.
 - If the recorded host route is `Codex direct`, continue at Section 4.
-- If the recorded host route is `generic stdio`, continue at Section 5.
+- If the recorded host route is `generic stdio`, continue at Section 6.
 
 ## Install With Codex
 
@@ -514,11 +520,60 @@ that launch environment before restarting the application.
 Start a new Codex session. An agent cannot restart its own active session.
 
 - If the user must start the new session, report `pending-restart` and wait.
-- After the new session starts, continue at Section 6.1.
+- After the new session starts, continue at Section 7.1.
+
+## Install With Claude Code
+
+### 5. Install In Claude Code
+
+Use this section only when the recorded host route is `Claude Code direct`. Claude
+Code installs the server and the semantic-navigation skill together as a plugin
+from the `elnonathan` marketplace; a separate global npm installation is not
+needed. Update and removal use Claude Code's native `/plugin` commands.
+
+The user runs each command. The agent provides one command, waits for the
+complete result, then continues.
+
+#### 5.1 Add The Marketplace
+
+Ask the user to run:
+
+```text
+/plugin marketplace add elnonathan/semantic-js-mcp
+```
+
+- If the marketplace is added, continue at Section 5.2.
+- If it fails, stop and report `blocked`.
+
+#### 5.2 Install The Plugin
+
+Ask the user to run:
+
+```text
+/plugin install semantic-js-mcp@elnonathan
+```
+
+The plugin sources the published npm package with its bundled dependencies, so it
+runs offline after installation.
+
+- If the plugin installs, continue at Section 5.3.
+- If it fails, stop and report `blocked`.
+
+#### 5.3 Restart And Verify
+
+Claude Code advertises the MCP `roots` capability, so the server limits its
+workspace boundary to the directories Claude Code exposes — the session workspace
+and any directory added with `/add-dir` — and `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`
+is not required. Ask the user to restart Claude Code or run `/reload-plugins`.
+
+- Until the user confirms the restart, report `pending-restart` and wait.
+- After restart, continue at Section 7.
+
+To register only the server without the skill, use the generic route in Section 6.
 
 ## Install With Another MCP Host
 
-### 5. Install In Another MCP Host
+### 6. Install In Another MCP Host
 
 Use this section only for the application recorded in Section 1.2.
 
@@ -527,7 +582,7 @@ The agent provides one command or action, waits for the complete result, and
 then decides whether to continue. The agent must not execute these steps
 inside its own shell or sandbox.
 
-#### 5.1 Confirm The Host Configuration
+#### 6.1 Confirm The Host Configuration
 
 If the host application name is not already known, ask:
 
@@ -554,7 +609,7 @@ run the exact subcommand with `--help` and wait for that output.
 Inspect the existing configuration and record any existing Semantic JS MCP
 entry. Preserve every unrelated entry.
 
-- If all facts are confirmed, continue at Section 5.2.
+- If all facts are confirmed, continue at Section 6.2.
 - If any fact is unknown, ask the user for the missing fact and wait. If it
   cannot be confirmed, stop and report `blocked`.
 
@@ -564,7 +619,7 @@ agent.
 
 Do not copy a path, JSON shape, URL, or port from another application.
 
-#### 5.2 Install The Exact Global Version
+#### 6.2 Install The Exact Global Version
 
 Build the command by placing the numeric version recorded in Section 3
 immediately after `npm install --global semantic-js-mcp@`. Confirm that the
@@ -577,11 +632,11 @@ also reports a permission or extraction problem.
 
 Treat `EPERM`, `EACCES`, `TAR_ENTRY_ERROR`, or a missing-file error as a partial installation.
 
-- If installation completes without those errors, continue at Section 5.3.
+- If installation completes without those errors, continue at Section 6.3.
 - If installation is partial, stop. Do not run doctor and do not edit the host
-  configuration. Continue at Section 7.1.
+  configuration. Continue at Section 8.1.
 
-#### 5.3 Check The Installed Version
+#### 6.3 Check The Installed Version
 
 Ask the user to run:
 
@@ -592,13 +647,13 @@ semantic-js-mcp --version
 Wait for the complete output.
 
 - If it exactly matches the version recorded in Section 3, continue at
-  Section 5.4.
-- Otherwise, stop and continue at Section 7.5.
+  Section 6.4.
+- Otherwise, stop and continue at Section 8.5.
 
 The version command succeeding does not prove that an earlier partial
 installation became complete.
 
-#### 5.4 Run Doctor
+#### 6.4 Run Doctor
 
 Ask the user to run:
 
@@ -608,16 +663,16 @@ semantic-js-mcp doctor
 
 Wait for the complete output.
 
-- If doctor reports `pass`, continue at Section 5.5.
+- If doctor reports `pass`, continue at Section 6.5.
 - If doctor reports `untrusted`, record the reported uncertainty and continue
-  at Section 5.5.
-- If doctor reports `fail` or `blocked`, stop and continue at Section 7.3.
+  at Section 6.5.
+- If doctor reports `fail` or `blocked`, stop and continue at Section 8.3.
 
 Do not shorten or filter the doctor output.
 
-#### 5.5 Register The Server
+#### 6.5 Register The Server
 
-Use only the configuration method and fields confirmed in Section 5.1. Ask the
+Use only the configuration method and fields confirmed in Section 6.1. Ask the
 user to add one entry with these values:
 
 - server name: `semanticjsmcp`
@@ -626,8 +681,8 @@ user to add one entry with these values:
 - arguments: one argument, `serve`
 - enabled: `true`, only if the host defines that field
 
-Do not construct the add command unless Section 5.1 recorded its exact current
-grammar. If that grammar is missing, return to Section 5.1 before showing any
+Do not construct the add command unless Section 6.1 recorded its exact current
+grammar. If that grammar is missing, return to Section 6.1 before showing any
 state-changing command.
 
 Change only the Semantic JS MCP entry. Do not replace the entire configuration
@@ -635,7 +690,7 @@ file. Do not add an environment variable unless the host documents that field
 and a previous numbered step established why it is needed.
 
 - Give the user one safe host-supported action and wait for the result.
-- If the entry is saved and validated, continue at Section 5.6.
+- If the entry is saved and validated, continue at Section 6.6.
 - If the configuration format is uncertain, stop and report `blocked`.
 
 An added-entry message is not enough. Compare the host's reported transport,
@@ -657,26 +712,26 @@ output.
 
 A manually started server does not prove that the configured host application loaded the MCP tools.
 
-#### 5.6 Restart The Host
+#### 6.6 Restart The Host
 
 Ask the user to restart or reload the host exactly as its documentation
 requires. Wait for confirmation.
 
 - If the host confirms that it already reloaded the entry and its MCP tool list
   contains the `lsp_` tools, treat the reload as complete and continue at
-  Section 6.2.
+  Section 7.2.
 - Until the user confirms the restart, report `pending-restart` and wait.
-- After restart, continue at Section 6.2.
+- After restart, continue at Section 7.2.
 
 ## Verify The Installation
 
-### 6. Verify The Current State
+### 7. Verify The Current State
 
 For a `verification` operation, use this section without changing the existing
 installation. A restart is required only when an earlier step changed the host
 entry or the host requires it to refresh MCP tools.
 
-#### 6.1 Verify Codex
+#### 7.1 Verify Codex
 
 Use this section only when the recorded host route is `Codex direct`.
 
@@ -690,10 +745,10 @@ Confirm that `semantic-js-mcp@elnonathan` is `installed, enabled` at the
 requested version. Open the MCP tool list in the new Codex session.
 
 - If tools whose names start with `lsp_` are present, continue at
-  Section 6.3.
-- If they are absent, continue at Section 7.7.
+  Section 7.3.
+- If they are absent, continue at Section 8.7.
 
-#### 6.2 Verify Another MCP Host
+#### 7.2 Verify Another MCP Host
 
 Use this section only when the recorded host route is `generic stdio`.
 
@@ -732,10 +787,10 @@ After the checks for the recorded server source pass, confirm that the host
 still contains the recorded `semanticjsmcp` entry, then open its MCP tool list.
 
 - If tools whose names start with `lsp_` are present, continue at
-  Section 6.3.
-- If they are absent, continue at Section 7.7.
+  Section 7.3.
+- If they are absent, continue at Section 8.7.
 
-#### 6.3 Report The Result
+#### 7.3 Report The Result
 
 Use exactly one outcome:
 
@@ -756,9 +811,9 @@ unrelated configuration.
 An installation-only request ends here. Do not call an `lsp_` tool against
 source code unless the user separately requests a functional test.
 
-#### 6.4 Run An Optional Functional Test
+#### 7.4 Run An Optional Functional Test
 
-Use this section only after Section 6.3 reports `success` and the user
+Use this section only after Section 7.3 reports `success` and the user
 separately requests a source-code test.
 
 Confirm one repository root and one JavaScript, TypeScript, JSX, TSX, or Vue
@@ -781,12 +836,12 @@ error or uncertainty.
 
 ## Troubleshooting
 
-### 7. When Something Goes Wrong
+### 8. When Something Goes Wrong
 
 Troubleshooting identifies the next safe step. It does not authorize bypassing
 a security control or ignoring an earlier error.
 
-#### 7.1 If npm Shows A Permission Or Extraction Error
+#### 8.1 If npm Shows A Permission Or Extraction Error
 
 This includes `EPERM`, `EACCES`, `TAR_ENTRY_ERROR`, `Operation not permitted`,
 or a missing-file error.
@@ -804,13 +859,13 @@ npm uninstall --global semantic-js-mcp
 
 When the user must run commands, give only that command and wait for its
 complete output. After removal succeeds, ask the user to run the exact
-installation command from Section 5.2 outside the blocked agent. Wait for the
+installation command from Section 6.2 outside the blocked agent. Wait for the
 complete npm output again.
 
 Only an uninstall followed by an error-free reinstall clears the incomplete
 installation.
 
-#### 7.2 If A Command Works For The User But Not For The Agent
+#### 8.2 If A Command Works For The User But Not For The Agent
 
 The agent may be blocked from files or directories outside its allowed area.
 This does not prove that the user's operating-system permissions are wrong.
@@ -822,17 +877,17 @@ Do not use `sudo`, `chmod`, or `chown`. Do not ask the user to disable the
 sandbox. Do not change `HOME`, `TMPDIR`, the npm prefix, the npm cache, or the
 installation directory to retry inside the agent.
 
-#### 7.3 If The Version Command Works But Doctor Fails
+#### 8.3 If The Version Command Works But Doctor Fails
 
 The executable exists, but Semantic JS MCP is not ready to register.
 
-- If npm previously reported an error from Section 7.1, return to Section 7.1.
+- If npm previously reported an error from Section 8.1, return to Section 8.1.
 - Otherwise, read the complete doctor output and report the failed check.
 
 Stop before editing the host configuration. Correct only the reported problem
 and only with the user's approval.
 
-#### 7.4 If A Temporary Directory Cannot Be Created
+#### 8.4 If A Temporary Directory Cannot Be Created
 
 If the error contains a temporary path and `EPERM` or `Operation not permitted`,
 the agent may be unable to write to that location.
@@ -843,25 +898,25 @@ the complete output.
 Do not invent another temporary path. Use one only after the user confirms it
 is writable and the host's configuration schema confirms how to provide it.
 
-#### 7.5 If The Installed Version Is Different
+#### 8.5 If The Installed Version Is Different
 
 Stop. Do not configure or verify the different version.
 
 - If the recorded host route is `Codex direct`, return to Section 4.4 and
   refresh the marketplace.
 - If the recorded host route is `generic stdio`, obtain approval to remove the
-  incorrect global version, then return to Section 5.2 with the recorded
+  incorrect global version, then return to Section 6.2 with the recorded
   numeric version.
 
-#### 7.6 If Doctor Says Untrusted
+#### 8.6 If Doctor Says Untrusted
 
 `untrusted` means doctor completed but could not fully confirm some semantic
 evidence. It is not the same as `pass`, and it is not the same as `fail`.
 
 Continue only when installation was clean. Record the uncertainty and continue
-at Section 5.5 or Section 6.2, whichever sent you here.
+at Section 6.5 or Section 7.2, whichever sent you here.
 
-#### 7.7 If The MCP Tools Do Not Appear
+#### 8.7 If The MCP Tools Do Not Appear
 
 A host status of `failed` is a failure, not an expected pre-restart state. Do
 not describe it as pending restart unless current host documentation explicitly
@@ -878,7 +933,7 @@ Confirm, in this order:
 Perform and evaluate one check at a time. Do not start the server manually and
 do not invent a URL or port.
 
-#### 7.8 If A Configuration File Cannot Be Changed
+#### 8.8 If A Configuration File Cannot Be Changed
 
 Stop the attempted edit. Do not change file permissions and do not replace the
 whole file.
@@ -886,12 +941,12 @@ whole file.
 Ask the user to use the host's official settings screen, configuration command,
 or documented file format. Give the user one action and wait for the result.
 
-#### 7.9 If Command Output Is Incomplete
+#### 8.9 If Command Output Is Incomplete
 
 Do not infer the result. Ask for the complete output without `head`, filtering,
 or omitted lines. Wait before continuing.
 
-#### 7.10 If Repeated Attempts Produce Different Errors
+#### 8.10 If Repeated Attempts Produce Different Errors
 
 Stop retrying. Inspect the current installation and configuration again. Do
 not assume that an earlier result still describes the machine.
@@ -901,46 +956,46 @@ failure condition has been cleared.
 
 ## Update
 
-### 8. Update An Existing Installation
+### 9. Update An Existing Installation
 
-#### 8.1 Record The Current State
+#### 9.1 Record The Current State
 
 Record the installed version, the existing Semantic JS MCP host entry, and the
 server source. Preserve every unrelated setting.
 
 Continue at Section 3 to resolve the exact target version.
 
-#### 8.2 Follow The Recorded Host Route
+#### 9.2 Follow The Recorded Host Route
 
 - If the recorded host route is `Codex direct`, continue at Section 4.2.
   Refresh the marketplace, confirm the offered version, install, restart, and
   verify.
 - If the recorded host route is `generic stdio` and the server source is
-  `global npm package`, continue at Section 5.2. Keep the existing entry when
+  `global npm package`, continue at Section 6.2. Keep the existing entry when
   its command and arguments are already correct.
 - If the server source is `source checkout`, do not choose or change a source
   revision. Ask the user to place the checkout at the intended revision, then
-  continue at Section 11.1. If that revision is unknown, report `blocked`.
+  continue at Section 12.1. If that revision is unknown, report `blocked`.
 
 Do not remove the working version before the replacement command is ready.
 
 ## Rollback
 
-### 9. Restore A Previous Version
+### 10. Restore A Previous Version
 
-#### 9.1 Record The Previous Version
+#### 10.1 Record The Previous Version
 
 Use the exact numeric version that was previously known to work. Do not replace
 it with the registry's current version.
 
-#### 9.2 Follow The Host Route
+#### 10.2 Follow The Host Route
 
 - If the recorded host route is `generic stdio` and the server source is
-  `global npm package`, return to Section 5.2 using the recorded previous
+  `global npm package`, return to Section 6.2 using the recorded previous
   version. Restore only the recorded Semantic JS MCP entry, restart, and verify.
 - If the server source is `source checkout`, do not choose or change a source
   revision. Ask the user to restore the previously known working revision, then
-  continue at Section 11.1. If that revision is unknown, report `blocked`.
+  continue at Section 12.1. If that revision is unknown, report `blocked`.
 - If the recorded host route is `Codex direct`, inspect the offered marketplace
   version. If it does not offer the requested previous version, stop and report
   `blocked`.
@@ -949,9 +1004,9 @@ Do not edit the Codex marketplace cache or substitute another version.
 
 ## Removal
 
-### 10. Remove Semantic JS MCP
+### 11. Remove Semantic JS MCP
 
-#### 10.1 Record The Current State
+#### 11.1 Record The Current State
 
 Record the installed version, the existing Semantic JS MCP entry, and the
 server source before changing anything.
@@ -963,12 +1018,12 @@ recorded host entry.
 
 A similarly named file is not evidence of a Semantic JS MCP installation.
 
-- If the recorded host route is `Codex direct`, continue at Section 10.2.
-- If the recorded host route is `generic stdio`, continue at Section 10.3.
+- If the recorded host route is `Codex direct`, continue at Section 11.2.
+- If the recorded host route is `generic stdio`, continue at Section 11.3.
 
 Do not use both removal routes.
 
-#### 10.2 Remove It From Codex
+#### 11.2 Remove It From Codex
 
 Use this section only when the recorded host route is `Codex direct`. Run:
 
@@ -984,9 +1039,9 @@ codex plugin marketplace remove elnonathan
 ```
 
 Run those commands separately. Restart Codex and confirm the tools are absent.
-The removal ends here. Do not continue at Section 10.3.
+The removal ends here. Do not continue at Section 11.3.
 
-#### 10.3 Remove It From Another Host
+#### 11.3 Remove It From Another Host
 
 Use this section only when the recorded host route is `generic stdio`.
 
@@ -1014,7 +1069,7 @@ Restart the host and confirm that Semantic JS MCP tools are absent.
 
 ## Source Checkout
 
-### 11. Use A Source Checkout
+### 12. Use A Source Checkout
 
 Use this section only for repository development or when the user explicitly
 requests a source checkout. Do not combine it with a registry or Codex plugin
@@ -1024,7 +1079,7 @@ The source checkout must already exist. If its root is not the current working
 directory and the user did not provide it, ask for the root and wait. Do not
 search the user's home directory or unrelated directories for a checkout.
 
-#### 11.1 Install The Locked Dependencies
+#### 12.1 Install The Locked Dependencies
 
 From the repository root, run:
 
@@ -1032,10 +1087,10 @@ From the repository root, run:
 npm ci
 ```
 
-- If it succeeds without installation errors, continue at Section 11.2.
+- If it succeeds without installation errors, continue at Section 12.2.
 - If it fails, stop and report `blocked`.
 
-#### 11.2 Check The Source Runtime
+#### 12.2 Check The Source Runtime
 
 Run:
 
@@ -1043,10 +1098,10 @@ Run:
 npm run check:runtime
 ```
 
-- If it succeeds, continue at Section 11.3.
+- If it succeeds, continue at Section 12.3.
 - If it fails, stop and report `blocked`.
 
-#### 11.3 Run The Source Doctor
+#### 12.3 Run The Source Doctor
 
 Run:
 
@@ -1058,11 +1113,11 @@ npm run doctor
   `no host`,
   report that the source checkout is ready and stop.
 - If it reports `pass` or `untrusted` and the recorded host route is
-  `generic stdio`, continue at Section 11.4.
+  `generic stdio`, continue at Section 12.4.
 - If the recorded host route is `Codex direct`, stop and report `blocked`.
 - If it reports `fail` or `blocked`, stop.
 
-#### 11.4 Register The Source Server
+#### 12.4 Register The Source Server
 
 For a non-Codex host that supports direct `stdio` commands, use its documented
 schema and these values:
@@ -1089,7 +1144,7 @@ configuration file for other hosts.
 
 ## Background
 
-### 12. Why These Steps Exist
+### 13. Why These Steps Exist
 
 An MCP host is the application that starts Semantic JS MCP and exposes its
 tools. Installing the npm package places files and an executable on the

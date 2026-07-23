@@ -1,0 +1,17 @@
+{
+  "name": "semantic-js-mcp",
+  "displayName": "Semantic JS MCP",
+  "version": "0.11.0",
+  "description": "Semantic understanding of JavaScript codebases for AI agents",
+  "author": {
+    "name": "Jonathan Muñoz Lucas"
+  },
+  "license": "MIT",
+  "mcpServers": {
+    "semantic-js-mcp": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.mjs"]
+    }
+  },
+  "skills": "./skills/"
+}

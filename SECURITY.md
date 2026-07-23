@@ -12,6 +12,8 @@ Every `file` and `root` argument is resolved through `realpath` — so symbolic 
 
 To analyze additional directories, set `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` to a path-delimiter-separated list of allowed roots (`:` on POSIX, `;` on Windows) in the server's environment. The Codex plugin starts the server from its installed package directory, so repositories are outside its default boundary. Codex users must set this variable in Codex's environment before starting a session; the plugin forwards it to the bundled server.
 
+Hosts that advertise the MCP `roots` capability (for example Claude Code) report the active workspace directly. The server unions those host-provided roots into the boundary at initialization and whenever the host reports a change, so no manual variable is needed on those hosts. Authority stays with the host, not the agent, and the default stays restrictive when no roots are advertised.
+
 ### No execution of repository-provided code
 
 The server always runs the TypeScript SDK bundled with this package. It does not execute `node_modules/typescript` from the analyzed repository unless `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set explicitly, and even then discovery never walks above the workspace boundary. TypeScript plugins load only from the bundled runtime probe location; local plugin loads from the analyzed repository are disabled. Language servers run with a sanitized environment (`NODE_OPTIONS`, `NODE_PATH`, and `NODE_REPL_EXTERNAL_MODULE` are removed) so inherited variables cannot inject code into child processes.

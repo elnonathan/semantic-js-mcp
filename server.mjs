@@ -8,6 +8,7 @@ import path from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
+import {RootsListChangedNotificationSchema} from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
@@ -81,6 +82,8 @@ const ALLOW_WORKSPACE_TYPESCRIPT = /^(?:1|true)$/i.test(process.env[ENVIRONMENT_
 const CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES = Object.freeze(["NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"]);
 const MAX_SYMBOL_NESTING_DEPTH = 100;
 let WORKSPACE_BOUNDARY_ROOTS = [];
+let baseWorkspaceRoots = [];
+let clientWorkspaceRoots = [];
 
 async function resolveWorkspaceBoundaryRoots() {
   const configured = (process.env[ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS] || "")
@@ -98,6 +101,35 @@ async function resolveWorkspaceBoundaryRoots() {
       return resolved;
     }),
   );
+}
+
+function applyWorkspaceBoundaryRoots() {
+  WORKSPACE_BOUNDARY_ROOTS = [...new Set([...baseWorkspaceRoots, ...clientWorkspaceRoots])];
+}
+
+// Hosts that advertise the MCP `roots` capability (e.g. Claude Code) report the
+// active workspace directly, so the boundary follows the host without manual
+// SEMANTIC_JS_MCP_WORKSPACE_ROOTS configuration. Host roots are unioned with the
+// base roots; a non-file or unreadable root is skipped rather than fatal.
+async function resolveClientWorkspaceRoots() {
+  if (!server.server.getClientCapabilities()?.roots) return [];
+  const response = await server.server.listRoots().catch(() => undefined);
+  const resolved = [];
+  for (const root of response?.roots || []) {
+    if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
+    try {
+      const directory = await realpath(fromUri(root.uri));
+      if ((await stat(directory)).isDirectory()) resolved.push(directory);
+    } catch {
+      // Skip a root the host lists but the server cannot resolve.
+    }
+  }
+  return resolved;
+}
+
+async function refreshClientWorkspaceRoots() {
+  clientWorkspaceRoots = await resolveClientWorkspaceRoots();
+  applyWorkspaceBoundaryRoots();
 }
 
 function workspaceBoundaryFor(resolvedPath) {
@@ -2520,7 +2552,8 @@ const readOnly = {readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 
 try {
   verifyBundledRuntime();
-  WORKSPACE_BOUNDARY_ROOTS = await resolveWorkspaceBoundaryRoots();
+  baseWorkspaceRoots = await resolveWorkspaceBoundaryRoots();
+  applyWorkspaceBoundaryRoots();
 } catch (error) {
   process.stderr.write(
     `${JSON.stringify({
@@ -3171,6 +3204,9 @@ async function shutdown() {
 
 process.on(PROCESS_SIGNAL.INTERRUPT, () => void shutdown().finally(() => process.exit(0)));
 process.on(PROCESS_SIGNAL.TERMINATE, () => void shutdown().finally(() => process.exit(0)));
+
+server.server.oninitialized = () => void refreshClientWorkspaceRoots();
+server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => void refreshClientWorkspaceRoots());
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

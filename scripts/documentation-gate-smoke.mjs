@@ -244,7 +244,7 @@ for (const [literal, message] of [
   ["low side-effect risk, but they are not sandbox-neutral evidence:", "Missing sandbox-neutral version-check boundary was accepted"],
   ["The agent must not perform even read-only local checks.", "Missing generic local-inspection prohibition was accepted"],
   ["A command name is not enough to infer its argument grammar.", "Missing host-command grammar guard was accepted"],
-  ["Do not construct the add command unless Section 5.1 recorded its exact current", "Missing add-command grammar checkpoint was accepted"],
+  ["Do not construct the add command unless Section 6.1 recorded its exact current", "Missing add-command grammar checkpoint was accepted"],
   ["An added-entry message is not enough.", "Missing saved-entry validation guard was accepted"],
   ["A host status of `failed` is a failure, not an expected pre-restart state.", "Missing failed-host-status guard was accepted"],
   ["Use `lsp_document_symbols` on that file as the first functional", "Missing bounded functional-test guidance was accepted"],
