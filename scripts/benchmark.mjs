@@ -50,7 +50,12 @@ for (const count of counts) {
   );
 
   const client = new Client({name: `${PRODUCT.NAME}-benchmark`, version: "1.0.0"});
-  const transport = new StdioClientTransport({command: process.execPath, args: [path.join(root, "server.mjs")], cwd: root});
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(root, "server.mjs")],
+    cwd: root,
+    env: {...process.env, [ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS]: tmpdir()},
+  });
   try {
     await client.connect(transport);
     const text = await timedCall(client, TOOL.COUNT_TEXT_MATCHES, {root: workspace, symbol});

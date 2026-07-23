@@ -77,6 +77,54 @@ const PROCESS_SIGNAL = Object.freeze({INTERRUPT: "SIGINT", TERMINATE: "SIGTERM"}
 const CONFIGURED_PROCESS_CWD = process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD]
   ? path.resolve(process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD])
   : undefined;
+const ALLOW_WORKSPACE_TYPESCRIPT = /^(?:1|true)$/i.test(process.env[ENVIRONMENT_VARIABLE.ALLOW_WORKSPACE_TYPESCRIPT] || "");
+const CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES = Object.freeze(["NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"]);
+const MAX_SYMBOL_NESTING_DEPTH = 100;
+let WORKSPACE_BOUNDARY_ROOTS = [];
+
+async function resolveWorkspaceBoundaryRoots() {
+  const configured = (process.env[ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS] || "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  // PLUGIN_ROOT is always allowed so the bundled runtime and doctor fixtures remain analyzable.
+  const candidates = [...new Set([...(configured.length > 0 ? configured : [process.cwd()]), PLUGIN_ROOT])];
+  return Promise.all(
+    candidates.map(async (candidate) => {
+      const resolved = await realpath(path.resolve(candidate));
+      if (!(await stat(resolved)).isDirectory()) {
+        throw new Error(`Configured workspace root is not a directory: ${candidate}`);
+      }
+      return resolved;
+    }),
+  );
+}
+
+function workspaceBoundaryFor(resolvedPath) {
+  let match;
+  for (const root of WORKSPACE_BOUNDARY_ROOTS) {
+    if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${path.sep}`)) continue;
+    // Prefer the outermost (shortest) containing root so repository discovery can walk up to it.
+    if (!match || root.length < match.length) match = root;
+  }
+  return match;
+}
+
+function assertInsideWorkspaceBoundary(resolvedPath, candidate) {
+  if (workspaceBoundaryFor(resolvedPath)) return resolvedPath;
+  const error = new Error(
+    `Path is outside the configured workspace boundary: ${candidate}. Set ${ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS} to allow additional analysis roots.`,
+  );
+  error.code = ERROR_CODE.PATH_OUTSIDE_WORKSPACE_BOUNDARY;
+  error.details = {allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS};
+  throw error;
+}
+
+function childEnvironment(overrides = {}) {
+  const environment = {...process.env, ...overrides};
+  for (const name of CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES) delete environment[name];
+  return environment;
+}
 const REQUEST_TIMEOUT_MS = DEFAULT.REQUEST_TIMEOUT_MS;
 const DIAGNOSTIC_WAIT_MS = DEFAULT.DIAGNOSTIC_WAIT_MS;
 let vueParsingDependenciesPromise;
@@ -261,7 +309,7 @@ async function existingDirectory(candidate) {
   if (!(await stat(resolved)).isDirectory()) {
     throw new Error(`Not a directory: ${candidate}`);
   }
-  return resolved;
+  return assertInsideWorkspaceBoundary(resolved, candidate);
 }
 
 async function existingFile(candidate) {
@@ -269,7 +317,7 @@ async function existingFile(candidate) {
   if (!(await stat(resolved)).isFile()) {
     throw new Error(`Not a file: ${candidate}`);
   }
-  return resolved;
+  return assertInsideWorkspaceBoundary(resolved, candidate);
 }
 
 async function discoverRoots(file, requestedRoot) {
@@ -281,6 +329,7 @@ async function discoverRoots(file, requestedRoot) {
     }
   }
 
+  const boundaryLimit = workspaceBoundaryFor(file);
   let current = path.dirname(file);
   let nearestProject;
   let repositoryRoot;
@@ -293,8 +342,8 @@ async function discoverRoots(file, requestedRoot) {
       break;
     }
     const parent = path.dirname(current);
-    if (parent === current) {
-      repositoryRoot = nearestProject || path.dirname(file);
+    if (parent === current || current === boundaryLimit) {
+      repositoryRoot = nearestProject || boundaryLimit || path.dirname(file);
       break;
     }
     current = parent;
@@ -348,7 +397,7 @@ function runProcess(command, args, cwd) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: processCwd(cwd),
-      env: process.env,
+      env: childEnvironment(),
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout = [];
@@ -392,6 +441,7 @@ async function rgIdentifierCandidates(root, identifier, maxCandidates, wholeIden
       "--fixed-strings",
       ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
       ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
+      "--",
       identifier,
       root,
     ],
@@ -459,13 +509,16 @@ function serverKind(file) {
 }
 
 function findTsdk(root) {
-  let current = root;
-  while (true) {
-    const workspaceTsdk = path.join(current, "node_modules", RUNTIME_PACKAGE.TYPESCRIPT, "lib");
-    if (existsSync(path.join(workspaceTsdk, "tsserver.js"))) return workspaceTsdk;
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
+  if (ALLOW_WORKSPACE_TYPESCRIPT) {
+    const boundaryLimit = workspaceBoundaryFor(root);
+    let current = root;
+    while (true) {
+      const workspaceTsdk = path.join(current, "node_modules", RUNTIME_PACKAGE.TYPESCRIPT, "lib");
+      if (existsSync(path.join(workspaceTsdk, "tsserver.js"))) return workspaceTsdk;
+      const parent = path.dirname(current);
+      if (parent === current || current === boundaryLimit) break;
+      current = parent;
+    }
   }
   return path.dirname(resolveRuntimeComponent(REQUIRED_RUNTIME_COMPONENT.TYPESCRIPT_SERVER, PLUGIN_ROOT));
 }
@@ -491,11 +544,11 @@ class TsserverBridge {
     this.processError = undefined;
     const args = [path.join(tsdk, "tsserver.js"), "--useInferredProjectPerProjectRoot", "--disableAutomaticTypingAcquisition"];
     if (enableVuePlugin) {
-      args.push("--globalPlugins", "@vue/typescript-plugin", "--pluginProbeLocations", runtimeNodeModules(), "--allowLocalPluginLoads");
+      args.push("--globalPlugins", "@vue/typescript-plugin", "--pluginProbeLocations", runtimeNodeModules());
     }
     this.process = spawn(process.execPath, args, {
       cwd: processCwd(root),
-      env: process.env,
+      env: childEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] starting bridge ${this.process.pid}\n`);
@@ -629,7 +682,7 @@ class LspClient {
 
     this.process = spawn(process.execPath, [entry, "--stdio"], {
       cwd: processCwd(this.root),
-      env: {...process.env, PATH: `${path.join(runtimeNodeModules(), ".bin")}${path.delimiter}${process.env.PATH || ""}`},
+      env: childEnvironment({PATH: `${path.join(runtimeNodeModules(), ".bin")}${path.delimiter}${process.env.PATH || ""}`}),
       stdio: ["pipe", "pipe", "pipe"],
     });
     process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] starting provider ${this.process.pid}\n`);
@@ -1069,10 +1122,10 @@ async function clientForFile(fileInput, rootInput) {
   try {
     file = await existingFile(fileInput);
   } catch (error) {
-    if (!rootInput) throw error;
+    if (!rootInput || error?.code === ERROR_CODE.PATH_OUTSIDE_WORKSPACE_BOUNDARY) throw error;
     const root = await existingDirectory(rootInput);
     const basename = path.basename(fileInput);
-    const matches = (await runProcess(RUNTIME_COMMAND.RIPGREP, ["--files", "--glob", `**/${basename}`, root], root))
+    const matches = (await runProcess(RUNTIME_COMMAND.RIPGREP, ["--files", "--glob", `**/${basename}`, "--", root], root))
       .split("\n")
       .filter(Boolean)
       .slice(0, DEFAULT.FILE_SUGGESTION_COUNT)
@@ -1089,18 +1142,10 @@ async function clientForFile(fileInput, rootInput) {
   return {client, file, root: roots.workspaceRoot, ...roots};
 }
 
-async function clientForRoot(rootInput) {
-  const root = await existingDirectory(rootInput || process.cwd());
-  const key = `typescript:${root}`;
-  const client = getOrCreateClient(key, root, LANGUAGE_ID.TYPESCRIPT);
-  await waitForReadyClient(key, client);
-  return {client, root};
-}
-
 function normalizeLocation(location) {
   const uri = location.uri || location.targetUri;
   const range = location.range || location.targetSelectionRange || location.targetRange;
-  if (!uri || !range) return undefined;
+  if (!uri || !range || !uri.startsWith("file:")) return undefined;
   return {file: fromUri(uri), range: displayRange(range)};
 }
 
@@ -1153,13 +1198,15 @@ async function typescriptServerDefinitionsAt(context, line, column) {
 }
 
 function normalizeTsserverDefinitions(value) {
-  return (value?.definitions || []).map((definition) => ({
-    file: path.resolve(definition.file),
-    range: {
-      start: {line: definition.start.line, column: definition.start.offset},
-      end: {line: definition.end.line, column: definition.end.offset},
-    },
-  }));
+  return (value?.definitions || [])
+    .filter((definition) => definition?.file && definition.start && definition.end)
+    .map((definition) => ({
+      file: path.resolve(definition.file),
+      range: {
+        start: {line: definition.start.line, column: definition.start.offset},
+        end: {line: definition.end.line, column: definition.end.offset},
+      },
+    }));
 }
 
 async function definitionsAtWithoutVueTemplateFallback(file, root, line, column) {
@@ -1580,6 +1627,7 @@ async function repositorySourceInventory(repositoryRoot) {
       "--files",
       ...SOURCE_FILE_GLOBS.flatMap((glob) => ["--glob", glob]),
       ...SOURCE_EXCLUDED_GLOBS.flatMap((glob) => ["--glob", glob]),
+      "--",
       repositoryRoot,
     ],
     repositoryRoot,
@@ -1863,7 +1911,8 @@ function hoverText(contents) {
   return contents ? JSON.stringify(contents) : "";
 }
 
-function flattenDocumentSymbols(symbols, file, parent = [], output = []) {
+function flattenDocumentSymbols(symbols, file, parent = [], output = [], depth = 0) {
+  if (depth > MAX_SYMBOL_NESTING_DEPTH) return output;
   for (const symbol of symbols || []) {
     if (symbol.location) {
       const normalized = normalizeLocation(symbol.location);
@@ -1876,7 +1925,7 @@ function flattenDocumentSymbols(symbols, file, parent = [], output = []) {
         file,
         range: displayRange(symbol.selectionRange || symbol.range),
       });
-      flattenDocumentSymbols(symbol.children, file, [...parent, symbol.name], output);
+      flattenDocumentSymbols(symbol.children, file, [...parent, symbol.name], output, depth + 1);
     }
   }
   return output;
@@ -2471,6 +2520,7 @@ const readOnly = {readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 
 try {
   verifyBundledRuntime();
+  WORKSPACE_BOUNDARY_ROOTS = await resolveWorkspaceBoundaryRoots();
 } catch (error) {
   process.stderr.write(
     `${JSON.stringify({

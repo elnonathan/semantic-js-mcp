@@ -4,9 +4,10 @@
       "command": "node",
       "args": ["./server.mjs"],
       "cwd": ".",
+      "env_vars": ["SEMANTIC_JS_MCP_WORKSPACE_ROOTS", "SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT"],
       "startup_timeout_sec": 30,
       "tool_timeout_sec": 300,
-      "default_tools_approval_mode": "auto"
+      "default_tools_approval_mode": "prompt"
     }
   }
 }

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-23
+
+### Security
+
+- Enforce a workspace boundary on file and directory arguments. Paths are resolved through `realpath` and must stay within the allowed roots: the server launch directory and the package root by default, extendable with `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` (path-delimiter-separated). Out-of-boundary requests return `PATH_OUTSIDE_WORKSPACE_BOUNDARY` without reading content. Repository discovery and cross-workspace scans use the same boundary.
+- Use the bundled TypeScript SDK by default. The analyzed repository's `node_modules/typescript` is used only when `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set, and the boundary still applies.
+- Load TypeScript plugins only from the bundled runtime location (`--allowLocalPluginLoads` removed from the Vue tsserver bridge).
+- Pass client-supplied search terms to `rg` after a `--` end-of-options separator, so a term beginning with `-` is not treated as a ripgrep flag.
+- Drop `NODE_OPTIONS`, `NODE_PATH`, and `NODE_REPL_EXTERNAL_MODULE` from the environment of spawned processes (`rg`, tsserver, language servers).
+- Handle malformed language-server output defensively: ignore non-`file:` URIs, skip incomplete tsserver definitions, and bound document-symbol recursion depth.
+- Remove unreachable `clientForRoot` dead code.
+- Replace `default_tools_approval_mode: "auto"` with `"prompt"` in `.mcp.json` so Codex asks before every `lsp_` tool call. Tools remain read-only; hosts that manage permissions themselves are unaffected.
+- Allow the Codex plugin to forward `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` and `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT` from Codex's environment to the bundled server.
+
+### Changed
+
+- Resolve `@emmetio/css-parser` from the npm registry instead of a Git branch, and require `@hono/node-server` >= 2.0.5, via `overrides`.
+- Declare `@vue/typescript-plugin` as a direct, bundled dependency (previously relied on as a transitive).
+- Update `@modelcontextprotocol/sdk` to 1.29.0, `@vue/language-server` to 3.3.8, `typescript-language-server` to 5.3.0, `@vue/compiler-sfc` to 3.5.40, `zod` to 4.4.3, and `prettier` to 3.9.6. `npm audit` reports no known vulnerabilities.
+
 ## [0.10.4] - 2026-07-20
 
 ### Changed

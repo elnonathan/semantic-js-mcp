@@ -2,6 +2,8 @@
 
 Semantic JS MCP adds static semantic evidence to an agent's existing code investigation. These prompts are starting points; the agent should still inspect source, search text, and run focused checks when behavior matters.
 
+Analysis is confined to the server's workspace boundary (the directory it was started in by default). Files outside it return `PATH_OUTSIDE_WORKSPACE_BOUNDARY`; add extra roots with `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`.
+
 ## Trace A Symbol
 
 > Trace the named symbol `parseRequest` across this repository. Measure its scope first, verify the exact declaration and references, then inspect its direct callers and callees. Report unresolved or incomplete evidence explicitly.

@@ -488,6 +488,29 @@ codex plugin list
 
 #### 4.8 Restart Codex
 
+The Codex plugin starts the server from the installed plugin directory, not
+from the active repository. Before starting Codex, set
+`SEMANTIC_JS_MCP_WORKSPACE_ROOTS` in the environment that launches Codex to the
+absolute repository roots the server may analyze. Separate multiple roots with
+`:` on POSIX or `;` on Windows. The plugin forwards this variable to the
+bundled server.
+
+For one repository on POSIX:
+
+```bash
+SEMANTIC_JS_MCP_WORKSPACE_ROOTS=/absolute/repository/root codex -C /absolute/repository/root
+```
+
+For one repository in PowerShell:
+
+```powershell
+$env:SEMANTIC_JS_MCP_WORKSPACE_ROOTS = 'C:\absolute\repository\root'
+codex -C C:\absolute\repository\root
+```
+
+If Codex is started by a desktop application or IDE, configure the variable in
+that launch environment before restarting the application.
+
 Start a new Codex session. An agent cannot restart its own active session.
 
 - If the user must start the new session, report `pending-restart` and wait.
@@ -743,6 +766,13 @@ source file. Use `lsp_document_symbols` on that file as the first functional
 test. Do not start with the user's home directory, a parent containing multiple
 repositories, or `lsp_workspace_symbols` with a common query such as `app` or
 `test`.
+
+The chosen file must lie inside the server's workspace boundary — the directory
+the server was started in or the package root. For the Codex plugin, Section
+4.8 requires the repository root in `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`. A
+`PATH_OUTSIDE_WORKSPACE_BOUNDARY` error means the path is outside that
+boundary; add its root to the variable in the server's environment, restart
+the host, and retry.
 
 A result limit may reduce presentation without reducing collection work. Keep
 the first test narrow by selecting one file, not by applying a small result

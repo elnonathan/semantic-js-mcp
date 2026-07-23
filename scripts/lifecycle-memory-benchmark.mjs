@@ -181,6 +181,7 @@ async function runBenchmark() {
     stderr: "pipe",
     env: {
       ...process.env,
+      [ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS]: tmpdir(),
       [ENVIRONMENT_VARIABLE.CLIENT_IDLE_TIMEOUT_MS]: String(BENCHMARK.CLIENT_IDLE_TIMEOUT_MS),
     },
   });

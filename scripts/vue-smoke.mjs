@@ -12,6 +12,7 @@ import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
+  ENVIRONMENT_VARIABLE,
   DEFINITION_RESOLUTION_METHOD,
   DEFINITION_SELECTION_STATUS,
   DIAGNOSTIC_EVIDENCE_REASON,
@@ -111,7 +112,12 @@ await writeFile(
 );
 
 const client = new Client({name: "semantic-js-mcp-vue-smoke", version: "1.0.0"});
-const transport = new StdioClientTransport({command: process.execPath, args: [path.join(pluginRoot, "server.mjs")], cwd: pluginRoot});
+const transport = new StdioClientTransport({
+  command: process.execPath,
+  args: [path.join(pluginRoot, "server.mjs")],
+  cwd: pluginRoot,
+  env: {...process.env, [ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS]: tmpdir()},
+});
 
 try {
   await client.connect(transport);

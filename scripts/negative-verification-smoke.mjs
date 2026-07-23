@@ -111,7 +111,7 @@ const transport = new StdioClientTransport({
   command: process.execPath,
   args: [path.join(root, "server.mjs")],
   cwd: root,
-  env: {...process.env, [ENVIRONMENT_VARIABLE.REFERENCE_SET_TTL_MS]: "150"},
+  env: {...process.env, [ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS]: tmpdir(), [ENVIRONMENT_VARIABLE.REFERENCE_SET_TTL_MS]: "150"},
 });
 
 try {

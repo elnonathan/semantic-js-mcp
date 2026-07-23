@@ -26,19 +26,20 @@ Its scope is intentionally narrow: it strengthens an agent's understanding of sy
 
 It supports the JavaScript ecosystem, including TypeScript, JavaScript, TSX, JSX, Node module variants, and Vue projects. Language servers provide the underlying semantic data, which the server turns into structured results designed for coding agents.
 
-For each file, it identifies the owning workspace and uses the corresponding TypeScript or Vue language server. Across the repository, it can distinguish verified references from unrelated or unresolved text matches. These results complement text search, source inspection, and focused tests.
+For each file, it identifies the owning workspace and uses the corresponding TypeScript or Vue language server. Across the repository, it can distinguish verified references from unrelated or unresolved text matches. Analysis stays within a configured workspace boundary (the directory the server was started in by default). These results complement text search, source inspection, and focused tests.
 
 ## Project Status
 
-Version `0.10.4` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
+Version `0.11.0` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
 
 ## Runtime
 
 - Node.js 22 or newer is required.
 - Node.js 24 LTS is recommended for new installations. See the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 - `rg` (ripgrep) must be available on `PATH` for repository-wide discovery.
-- The nearest workspace TypeScript SDK is used when available; the bundled TypeScript SDK is the fallback.
-- TypeScript, `typescript-language-server`, and the Vue language server are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Startup verifies provider entry points before accepting MCP requests.
+- The bundled TypeScript SDK is used by default. The analyzed repository's own `node_modules/typescript` is used only when `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set.
+- Analysis is confined to a workspace boundary: the directory the server was started in and the package root. Paths outside it are rejected with `PATH_OUTSIDE_WORKSPACE_BOUNDARY`. The Codex plugin starts the server from its installed package directory, so set `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` (path-delimiter-separated) in Codex's environment to the repositories it may analyze before starting Codex.
+- TypeScript, `typescript-language-server`, the Vue language server, and `@vue/typescript-plugin` are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Startup verifies provider entry points before accepting MCP requests.
 - Source discovery and language selection include `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, and `.vue` files.
 - Run `npm run check:runtime` to report every required component and its resolved file path.
 
