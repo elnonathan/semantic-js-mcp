@@ -373,7 +373,7 @@ function providerNodeArguments({allowChildProcess = false} = {}) {
     ...readRoots.map((root) => `--allow-fs-read=${root}`),
     ...writeRoots.map((root) => `--allow-fs-write=${root}`),
     ...(allowChildProcess ? ["--allow-child-process", "--disable-warning=SecurityWarning"] : []),
-    `--import=${PROVIDER_FILESYSTEM_GUARD}`,
+    `--import=${pathToFileURL(PROVIDER_FILESYSTEM_GUARD).href}`,
   ];
 }
 const REQUEST_TIMEOUT_MS = DEFAULT.REQUEST_TIMEOUT_MS;
