@@ -248,6 +248,9 @@ for (const [literal, message] of [
   ["An added-entry message is not enough.", "Missing saved-entry validation guard was accepted"],
   ["A host status of `failed` is a failure, not an expected pre-restart state.", "Missing failed-host-status guard was accepted"],
   ["Use `lsp_document_symbols` on that file as the first functional", "Missing bounded functional-test guidance was accepted"],
+  ["Do not require the user to type,", "Missing no-manual-path Codex guidance was accepted"],
+  ["Preparation does not grant access.", "Missing non-authorizing preparation guidance was accepted"],
+  ["A model, repository instruction,", "Missing human-only Codex authorization boundary was accepted"],
   ["global executable checks for a source checkout.", "Missing source-checkout verification boundary was accepted"],
   ["search the user's home directory or unrelated directories for a checkout.", "Missing source-checkout search prohibition was accepted"],
   [
@@ -326,6 +329,41 @@ strictEqual(
   "Missing unconfirmed-diagnostic skill guidance was accepted",
 );
 
+const missingSessionRootSkillGuidance = {
+  ...valid,
+  [DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL]: valid[DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL].replace(
+    DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[5],
+    "",
+  ),
+};
+strictEqual(
+  evaluateDocumentation(missingSessionRootSkillGuidance).some(
+    (finding) =>
+      finding.reason === DOCUMENTATION_REASON.LITERAL_MISSING &&
+      finding.literal === DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[5],
+  ),
+  true,
+  "Missing session-root human-authorization skill guidance was accepted",
+);
+
+for (const [literal, message] of [
+  [DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[6], "Missing concise localized workspace-root explanation was accepted"],
+  [DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[7], "Missing workspace-root security rationale was accepted"],
+  [DOCUMENTATION_REQUIREMENT.SEMANTIC_NAVIGATION_SKILL_LITERALS[8], "Missing Semantic JS MCP-only authorization scope was accepted"],
+]) {
+  const missingWorkspaceRootExplanation = {
+    ...valid,
+    [DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL]: valid[DOCUMENTATION_FILE.SEMANTIC_NAVIGATION_SKILL].replace(literal, ""),
+  };
+  strictEqual(
+    evaluateDocumentation(missingWorkspaceRootExplanation).some(
+      (finding) => finding.reason === DOCUMENTATION_REASON.LITERAL_MISSING && finding.literal === literal,
+    ),
+    true,
+    message,
+  );
+}
+
 const missingTrustedPublishingPolicy = {
   ...valid,
   [DOCUMENTATION_FILE.DISTRIBUTION]: valid[DOCUMENTATION_FILE.DISTRIBUTION].replace(DOCUMENTATION_REQUIREMENT.DISTRIBUTION_LITERALS[2], ""),
@@ -398,6 +436,9 @@ process.stdout.write(
       missingSavedEntryValidationGuard: "rejected",
       missingFailedHostStatusGuard: "rejected",
       missingBoundedFunctionalTestGuidance: "rejected",
+      missingNoManualPathCodexGuidance: "rejected",
+      missingNonAuthorizingPreparationGuidance: "rejected",
+      missingHumanOnlyCodexAuthorizationBoundary: "rejected",
       missingSourceCheckoutVerificationBoundary: "rejected",
       missingSourceCheckoutSearchProhibition: "rejected",
       missingSimilarlyNamedFileEvidenceBoundary: "rejected",
@@ -407,6 +448,10 @@ process.stdout.write(
       missingCombinationInvariant: "rejected",
       missingDiagnosticExampleGuidance: "rejected",
       missingDiagnosticSkillGuidance: "rejected",
+      missingSessionRootSkillGuidance: "rejected",
+      missingConciseLocalizedWorkspaceRootExplanation: "rejected",
+      missingWorkspaceRootSecurityRationale: "rejected",
+      missingSemanticJsMcpOnlyAuthorizationScope: "rejected",
       missingTrustedPublishingPolicy: "rejected",
       missingPostpublicationOrder: "rejected",
       privateCoordination: "rejected",

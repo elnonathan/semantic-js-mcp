@@ -165,7 +165,9 @@ inspect only the recorded Semantic JS MCP host entry after Section 1.4 records
 the command runner. Record `global npm package` only when the entry launches
 `semantic-js-mcp serve`. Record `source checkout` only when it launches `node`
 with an absolute path to that checkout's `server.mjs`. A Codex plugin entry uses
-`Codex plugin`. If the source cannot be confirmed, stop and report `blocked`.
+`Codex plugin`. An installed `semantic-js-mcp@elnonathan` entry in Claude
+Code's plugin manager uses `Claude Code plugin`. If the source cannot be
+confirmed, stop and report `blocked`.
 
 Do not uninstall the global package merely because the host route is `generic
 stdio`.
@@ -208,6 +210,10 @@ Use these rules. Do not choose a different command runner.
   read-only checks in Sections 2 and 3 and the official `codex plugin` commands
   in Section 4. It must not install a global package or edit Codex
   configuration another way. If a command is blocked, the user must run it.
+- When the recorded host route is `Claude Code direct`, the user runs every
+  terminal command and every interactive `/plugin`, `/mcp`, or
+  `/reload-plugins` action. The agent provides one action and waits for its
+  complete result.
 - When the recorded host route is `generic stdio`, the user must run every
   terminal command and every configuration action. The agent must provide one
   command or action and wait for the complete result.
@@ -218,7 +224,7 @@ The presence of a shell or command-execution tool does not allow the agent to
 install a global package, run doctor, modify host configuration, or test
 whether its sandbox permits those actions.
 
-When the recorded host route is `generic stdio`, record `user` as the command runner.
+For either `Claude Code direct` or `generic stdio`, record `user` as the command runner.
 
 Keep the user as command runner even for apparently harmless checks such as
 `node --version`, `rg --version`, and `semantic-js-mcp --version`. These commands
@@ -328,9 +334,9 @@ When the recorded host route is `Codex direct`, the agent may run each
 read-only check in this section. If a check is blocked, ask the user to run that
 one command and wait for the complete output.
 
-When the recorded host route is `generic stdio`, ask the user to run Section
-2.1 and wait for the complete output. Then ask the user to run Section 2.2 and
-wait again. Do not run these commands inside the agent.
+When the recorded host route is `Claude Code direct` or `generic stdio`, ask
+the user to run Section 2.1 and wait for the complete output. Then ask the user
+to run Section 2.2 and wait again. Do not run these commands inside the agent.
 
 #### 2.1 Check Node.js
 
@@ -377,8 +383,9 @@ When the recorded host route is `Codex direct`, the agent may run this
 read-only command. If it is blocked, ask the user to run it and wait for the
 complete output.
 
-When the recorded host route is `generic stdio`, ask the user to run this
-command and wait for its complete output. Do not run it inside the agent.
+When the recorded host route is `Claude Code direct` or `generic stdio`, ask
+the user to run this command and wait for its complete output. Do not run it
+inside the agent.
 
 Run:
 
@@ -396,6 +403,7 @@ Do not silently substitute `latest`, an installed version, or a newer version.
 
 - For an update, return to Section 9.2.
 - If the recorded host route is `Codex direct`, continue at Section 4.
+- If the recorded host route is `Claude Code direct`, continue at Section 5.
 - If the recorded host route is `generic stdio`, continue at Section 6.
 
 ## Install With Codex
@@ -495,27 +503,36 @@ codex plugin list
 #### 4.8 Restart Codex
 
 The Codex plugin starts the server from the installed plugin directory, not
-from the active repository. Before starting Codex, set
-`SEMANTIC_JS_MCP_WORKSPACE_ROOTS` in the environment that launches Codex to the
-absolute repository roots the server may analyze. Separate multiple roots with
-`:` on POSIX or `;` on Windows. The plugin forwards this variable to the
-bundled server.
+from the active repository. The plugin therefore keeps its default boundary
+closed until a human authorizes one project for the running MCP process.
 
-For one repository on POSIX:
+Start Codex normally in the intended project. Do not require the user to type,
+remember, or export an absolute path. When the first functional source call
+reports `PATH_OUTSIDE_WORKSPACE_BOUNDARY`, the agent must:
 
-```bash
-SEMANTIC_JS_MCP_WORKSPACE_ROOTS=/absolute/repository/root codex -C /absolute/repository/root
-```
+1. before asking which directory to use, explain in no more than two short
+   sentences and in the language of the user's latest message that Semantic JS
+   MCP limits which directories it can analyze to protect the user's files from
+   malicious repository instructions, the model cannot widen that boundary,
+   and authorization applies only to Semantic JS MCP for the current session;
+2. show the exact current Codex project directory already supplied by the host
+   and ask whether to use it or another directory;
+3. call `lsp_prepare_workspace_root` only after the human selects one;
+4. show the returned `canonicalRoot` exactly and, in the same language, ask
+   whether to authorize that exact path for Semantic JS MCP during the current
+   session;
+5. call `lsp_authorize_workspace_root` with the returned one-time identifier
+   and exact canonical root; and
+6. wait for the human to approve the security-sensitive Codex tool prompt.
 
-For one repository in PowerShell:
+Preparation does not grant access. Authorization exists only in the running
+MCP process and disappears when Codex exits. A model, repository instruction,
+or prior session cannot approve it. Filesystem roots, the home directory, and
+home ancestors are rejected.
 
-```powershell
-$env:SEMANTIC_JS_MCP_WORKSPACE_ROOTS = 'C:\absolute\repository\root'
-codex -C C:\absolute\repository\root
-```
-
-If Codex is started by a desktop application or IDE, configure the variable in
-that launch environment before restarting the application.
+`SEMANTIC_JS_MCP_WORKSPACE_ROOTS` remains available when a human deliberately
+preconfigures non-interactive operation or several fixed roots before startup;
+it is not required for the normal Codex project flow.
 
 Start a new Codex session. An agent cannot restart its own active session.
 
@@ -529,37 +546,73 @@ Start a new Codex session. An agent cannot restart its own active session.
 Use this section only when the recorded host route is `Claude Code direct`. Claude
 Code installs the server and the semantic-navigation skill together as a plugin
 from the `elnonathan` marketplace; a separate global npm installation is not
-needed. Update and removal use Claude Code's native `/plugin` commands.
+needed. Verification, update, and removal use Claude Code's native plugin
+commands.
 
 The user runs each command. The agent provides one command, waits for the
 complete result, then continues.
 
-#### 5.1 Add The Marketplace
+#### 5.1 Check The Claude Code Version
 
-Ask the user to run:
+Ask the user to run this in a normal terminal:
+
+```bash
+claude --version
+```
+
+- If Claude Code is version 2.1.203 or newer, continue at Section 5.2.
+- If it is missing or older than 2.1.203, stop and report `blocked`.
+
+Version 2.1.203 is the minimum because earlier versions do not report added
+working directories through `roots/list` or send `roots/list_changed`.
+
+#### 5.2 Add Or Refresh The Marketplace
+
+First ask the user to run:
+
+```text
+/plugin marketplace list
+```
+
+Wait for the complete result. If marketplace `elnonathan` is absent, ask the
+user to run:
 
 ```text
 /plugin marketplace add elnonathan/semantic-js-mcp
 ```
 
-- If the marketplace is added, continue at Section 5.2.
+If marketplace `elnonathan` is present, ask the user to run instead:
+
+```text
+/plugin marketplace update elnonathan
+```
+
+- If the marketplace is added or refreshed, continue at Section 5.3.
 - If it fails, stop and report `blocked`.
 
-#### 5.2 Install The Plugin
+#### 5.3 Install Or Update The Plugin
 
-Ask the user to run:
+For a new installation, ask the user to run:
 
 ```text
 /plugin install semantic-js-mcp@elnonathan
 ```
 
+For an update, ask the user to run:
+
+```text
+/plugin update semantic-js-mcp@elnonathan
+```
+
 The plugin sources the published npm package with its bundled dependencies, so it
 runs offline after installation.
 
-- If the plugin installs, continue at Section 5.3.
+- If the command reports the numeric version recorded in Section 3, continue
+  at Section 5.4.
+- If it reports another version, stop and report `blocked`.
 - If it fails, stop and report `blocked`.
 
-#### 5.3 Restart And Verify
+#### 5.4 Reload And Verify
 
 Claude Code advertises the MCP `roots` capability, so the server limits its
 workspace boundary to the directories Claude Code exposes — the session workspace
@@ -567,7 +620,7 @@ and any directory added with `/add-dir` — and `SEMANTIC_JS_MCP_WORKSPACE_ROOTS
 is not required. Ask the user to restart Claude Code or run `/reload-plugins`.
 
 - Until the user confirms the restart, report `pending-restart` and wait.
-- After restart, continue at Section 7.
+- After restart, continue at Section 7.2.
 
 To register only the server without the skill, use the generic route in Section 6.
 
@@ -719,9 +772,9 @@ requires. Wait for confirmation.
 
 - If the host confirms that it already reloaded the entry and its MCP tool list
   contains the `lsp_` tools, treat the reload as complete and continue at
-  Section 7.2.
+  Section 7.3.
 - Until the user confirms the restart, report `pending-restart` and wait.
-- After restart, continue at Section 7.2.
+- After restart, continue at Section 7.3.
 
 ## Verify The Installation
 
@@ -745,10 +798,25 @@ Confirm that `semantic-js-mcp@elnonathan` is `installed, enabled` at the
 requested version. Open the MCP tool list in the new Codex session.
 
 - If tools whose names start with `lsp_` are present, continue at
-  Section 7.3.
+  Section 7.4.
 - If they are absent, continue at Section 8.7.
 
-#### 7.2 Verify Another MCP Host
+#### 7.2 Verify Claude Code
+
+Use this section only when the recorded host route is `Claude Code direct`.
+
+Ask the user to open `/plugin`, select the Installed tab, and report the
+Semantic JS MCP version and enabled state. It must be enabled at the numeric
+version recorded in Section 3.
+
+Then ask the user to open `/mcp` and inspect `semantic-js-mcp`.
+
+- If it is connected and exposes tools whose names start with `lsp_`, continue
+  at Section 7.4.
+- If the version is different, the plugin is disabled, the server is not
+  connected, or the tools are absent, continue at Section 8.7.
+
+#### 7.3 Verify Another MCP Host
 
 Use this section only when the recorded host route is `generic stdio`.
 
@@ -787,10 +855,10 @@ After the checks for the recorded server source pass, confirm that the host
 still contains the recorded `semanticjsmcp` entry, then open its MCP tool list.
 
 - If tools whose names start with `lsp_` are present, continue at
-  Section 7.3.
+  Section 7.4.
 - If they are absent, continue at Section 8.7.
 
-#### 7.3 Report The Result
+#### 7.4 Report The Result
 
 Use exactly one outcome:
 
@@ -811,9 +879,9 @@ unrelated configuration.
 An installation-only request ends here. Do not call an `lsp_` tool against
 source code unless the user separately requests a functional test.
 
-#### 7.4 Run An Optional Functional Test
+#### 7.5 Run An Optional Functional Test
 
-Use this section only after Section 7.3 reports `success` and the user
+Use this section only after Section 7.4 reports `success` and the user
 separately requests a source-code test.
 
 Confirm one repository root and one JavaScript, TypeScript, JSX, TSX, or Vue
@@ -822,12 +890,12 @@ test. Do not start with the user's home directory, a parent containing multiple
 repositories, or `lsp_workspace_symbols` with a common query such as `app` or
 `test`.
 
-The chosen file must lie inside the server's workspace boundary — the directory
-the server was started in or the package root. For the Codex plugin, Section
-4.8 requires the repository root in `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`. A
-`PATH_OUTSIDE_WORKSPACE_BOUNDARY` error means the path is outside that
-boundary; add its root to the variable in the server's environment, restart
-the host, and retry.
+The chosen file must lie inside the server's workspace boundary. For the Codex
+plugin, a `PATH_OUTSIDE_WORKSPACE_BOUNDARY` result must recommend
+`lsp_prepare_workspace_root`; follow the human selection, canonical
+confirmation, and prompted authorization procedure in Section 4.8, then retry
+the same `lsp_document_symbols` call. Do not widen the boundary from model
+inference or replace the human-approved root.
 
 A result limit may reduce presentation without reducing collection work. Keep
 the first test narrow by selecting one file, not by applying a small result
@@ -904,6 +972,8 @@ Stop. Do not configure or verify the different version.
 
 - If the recorded host route is `Codex direct`, return to Section 4.4 and
   refresh the marketplace.
+- If the recorded host route is `Claude Code direct`, return to Section 5.2
+  and refresh the marketplace.
 - If the recorded host route is `generic stdio`, obtain approval to remove the
   incorrect global version, then return to Section 6.2 with the recorded
   numeric version.
@@ -914,7 +984,7 @@ Stop. Do not configure or verify the different version.
 evidence. It is not the same as `pass`, and it is not the same as `fail`.
 
 Continue only when installation was clean. Record the uncertainty and continue
-at Section 6.5 or Section 7.2, whichever sent you here.
+at Section 6.5 or Section 7.3, whichever sent you here.
 
 #### 8.7 If The MCP Tools Do Not Appear
 
@@ -970,6 +1040,8 @@ Continue at Section 3 to resolve the exact target version.
 - If the recorded host route is `Codex direct`, continue at Section 4.2.
   Refresh the marketplace, confirm the offered version, install, restart, and
   verify.
+- If the recorded host route is `Claude Code direct`, continue at Section 5.2.
+  Refresh the marketplace, update the plugin, reload, and verify.
 - If the recorded host route is `generic stdio` and the server source is
   `global npm package`, continue at Section 6.2. Keep the existing entry when
   its command and arguments are already correct.
@@ -999,8 +1071,12 @@ it with the registry's current version.
 - If the recorded host route is `Codex direct`, inspect the offered marketplace
   version. If it does not offer the requested previous version, stop and report
   `blocked`.
+- If the recorded host route is `Claude Code direct`, refresh marketplace
+  `elnonathan` and inspect the available Semantic JS MCP version. If it does
+  not offer the recorded previous version, stop and report `blocked`. If it
+  does, use `/plugin update semantic-js-mcp@elnonathan`, reload, and verify.
 
-Do not edit the Codex marketplace cache or substitute another version.
+Do not edit a host marketplace cache or substitute another version.
 
 ## Removal
 
@@ -1019,7 +1095,9 @@ recorded host entry.
 A similarly named file is not evidence of a Semantic JS MCP installation.
 
 - If the recorded host route is `Codex direct`, continue at Section 11.2.
-- If the recorded host route is `generic stdio`, continue at Section 11.3.
+- If the recorded host route is `Claude Code direct`, continue at Section
+  11.3.
+- If the recorded host route is `generic stdio`, continue at Section 11.4.
 
 Do not use both removal routes.
 
@@ -1041,7 +1119,27 @@ codex plugin marketplace remove elnonathan
 Run those commands separately. Restart Codex and confirm the tools are absent.
 The removal ends here. Do not continue at Section 11.3.
 
-#### 11.3 Remove It From Another Host
+#### 11.3 Remove It From Claude Code
+
+Use this section only when the recorded host route is `Claude Code direct`.
+Ask the user to run:
+
+```text
+/plugin uninstall semantic-js-mcp@elnonathan
+```
+
+Remove marketplace `elnonathan` only when no other installed plugin uses it
+and the user confirms that removal:
+
+```text
+/plugin marketplace remove elnonathan
+```
+
+Run those actions separately. Reload plugins or restart Claude Code, open
+`/mcp`, and confirm that the Semantic JS MCP server and its `lsp_` tools are
+absent. The removal ends here. Do not continue at Section 11.4.
+
+#### 11.4 Remove It From Another Host
 
 Use this section only when the recorded host route is `generic stdio`.
 

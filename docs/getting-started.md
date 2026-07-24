@@ -2,7 +2,7 @@
 
 Semantic JS MCP adds static semantic evidence to an agent's existing code investigation. These prompts are starting points; the agent should still inspect source, search text, and run focused checks when behavior matters.
 
-Analysis is confined to the server's workspace boundary (the directory it was started in by default). Files outside it return `PATH_OUTSIDE_WORKSPACE_BOUNDARY`; add extra roots with `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`.
+Analysis is confined to the server's workspace boundary (the directory it was started in by default). Files outside it return `PATH_OUTSIDE_WORKSPACE_BOUNDARY`. Hosts with MCP roots support provide their approved directories automatically. The Codex plugin can prepare a human-selected canonical root and add it only after a separate human-approved call; that access disappears with the MCP process. Other hosts can preconfigure extra roots with `SEMANTIC_JS_MCP_WORKSPACE_ROOTS`. Each language-server process receives a fixed canonical-root snapshot, and changing authorized roots restarts providers and invalidates cached reference sets.
 
 ## Trace A Symbol
 

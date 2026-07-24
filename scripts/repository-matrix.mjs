@@ -7,7 +7,7 @@ import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml, stringify as stringifyYaml} from "yaml";
 import {z} from "zod";
-import {CI_STATUS, CLI_ARGUMENT, PACKAGE_PATH, PRODUCT, SERVER_VERSION, TOOL} from "../protocol.mjs";
+import {CI_STATUS, CLI_ARGUMENT, ENVIRONMENT_VARIABLE, PACKAGE_PATH, PRODUCT, SERVER_VERSION, TOOL} from "../protocol.mjs";
 import {
   REPOSITORY_MATRIX_ARGUMENT,
   REPOSITORY_MATRIX_MODE,
@@ -213,12 +213,17 @@ async function loadConfiguration() {
 }
 
 async function connectClient(prepared) {
-  if (!prepared.some((repository) => !repository.status)) return {};
+  const repositories = prepared.filter((repository) => !repository.status);
+  if (repositories.length === 0) return {};
   const client = new Client({name: `${PRODUCT.NAME}-repository-matrix`, version: SERVER_VERSION});
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(packageRoot, PACKAGE_PATH.SERVER)],
     cwd: packageRoot,
+    env: {
+      ...process.env,
+      [ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS]: repositories.map((repository) => repository.root).join(path.delimiter),
+    },
   });
   try {
     await client.connect(transport);

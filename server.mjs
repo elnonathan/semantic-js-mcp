@@ -2,8 +2,9 @@
 
 import {spawn} from "node:child_process";
 import {createHash, randomUUID} from "node:crypto";
-import {createReadStream, existsSync} from "node:fs";
-import {readFile, realpath, stat} from "node:fs/promises";
+import {createReadStream, existsSync, realpathSync} from "node:fs";
+import {mkdtemp, readFile, realpath, stat} from "node:fs/promises";
+import {homedir, tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -17,6 +18,8 @@ import {diagnosticUseSummary} from "./lib/diagnostic-evidence.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {collectStableSnapshot} from "./lib/stable-collection.mjs";
+import {removeTemporaryDirectory} from "./lib/temporary-directory.mjs";
+import {CODEX_SESSION_ROOT_AUTHORIZATION} from "./lib/codex-session-root-authorization.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -45,6 +48,7 @@ import {
   LSP_COMMAND,
   LSP_METHOD,
   NODE_EVENT,
+  OPERATING_SYSTEM,
   INTERNAL_RESOLUTION_SOURCE,
   PRESENTATION_MODE,
   PROCESS_EXIT_CODE,
@@ -79,11 +83,37 @@ const CONFIGURED_PROCESS_CWD = process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD]
   ? path.resolve(process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD])
   : undefined;
 const ALLOW_WORKSPACE_TYPESCRIPT = /^(?:1|true)$/i.test(process.env[ENVIRONMENT_VARIABLE.ALLOW_WORKSPACE_TYPESCRIPT] || "");
-const CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES = Object.freeze(["NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"]);
+const CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES = Object.freeze([
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NODE_REPL_EXTERNAL_MODULE",
+  CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE,
+]);
+const PROVIDER_ENVIRONMENT_VARIABLE = Object.freeze({
+  READ_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_READ_ROOTS",
+  WRITE_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_WRITE_ROOTS",
+  CHILD_ENTRY: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_CHILD_ENTRY",
+});
+const PROVIDER_FILESYSTEM_GUARD = path.join(PLUGIN_ROOT, "lib", "provider-filesystem-guard.mjs");
+const SESSION_ROOT_AUTHORIZATION_TTL_MS = 5 * 60 * 1000;
+const MAXIMUM_PENDING_SESSION_ROOT_AUTHORIZATIONS = 32;
+const CODEX_SESSION_ROOT_AUTHORIZATION_ENABLED =
+  process.env[CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE] === CODEX_SESSION_ROOT_AUTHORIZATION.ENABLED_VALUE;
+const ROOT_PREPARATION_ERROR_CODES = new Set([
+  ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+  ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_EXPIRED,
+  ERROR_CODE.WORKSPACE_ROOT_TOO_BROAD,
+]);
 const MAX_SYMBOL_NESTING_DEPTH = 100;
 let WORKSPACE_BOUNDARY_ROOTS = [];
 let baseWorkspaceRoots = [];
 let clientWorkspaceRoots = [];
+let sessionWorkspaceRoots = [];
+let workspaceBoundaryGeneration = 0;
+let providerTemporaryDirectory;
+let workspaceRootsRefreshSequence = 0;
+let latestWorkspaceRootsRefresh = Promise.resolve();
+const pendingSessionRootAuthorizations = new Map();
 
 async function resolveWorkspaceBoundaryRoots() {
   const configured = (process.env[ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS] || "")
@@ -103,8 +133,17 @@ async function resolveWorkspaceBoundaryRoots() {
   );
 }
 
-function applyWorkspaceBoundaryRoots() {
-  WORKSPACE_BOUNDARY_ROOTS = [...new Set([...baseWorkspaceRoots, ...clientWorkspaceRoots])];
+function sameRoots(left, right) {
+  return left.length === right.length && left.every((root) => right.includes(root));
+}
+
+function applyWorkspaceBoundaryRoots({invalidate = false} = {}) {
+  const nextRoots = [...new Set([...baseWorkspaceRoots, ...clientWorkspaceRoots, ...sessionWorkspaceRoots])];
+  if (sameRoots(WORKSPACE_BOUNDARY_ROOTS, nextRoots)) return false;
+  WORKSPACE_BOUNDARY_ROOTS = nextRoots;
+  workspaceBoundaryGeneration++;
+  if (invalidate) invalidateWorkspaceBoundaryState();
+  return true;
 }
 
 // Hosts that advertise the MCP `roots` capability (e.g. Claude Code) report the
@@ -127,9 +166,25 @@ async function resolveClientWorkspaceRoots() {
   return resolved;
 }
 
-async function refreshClientWorkspaceRoots() {
-  clientWorkspaceRoots = await resolveClientWorkspaceRoots();
-  applyWorkspaceBoundaryRoots();
+function refreshClientWorkspaceRoots() {
+  const sequence = ++workspaceRootsRefreshSequence;
+  const refresh = resolveClientWorkspaceRoots().then((roots) => {
+    if (sequence !== workspaceRootsRefreshSequence) return false;
+    clientWorkspaceRoots = roots;
+    return applyWorkspaceBoundaryRoots({invalidate: true});
+  });
+  latestWorkspaceRootsRefresh = refresh;
+  return refresh;
+}
+
+async function ensureWorkspaceBoundaryReady() {
+  if (!server.server.getClientCapabilities()?.roots) return;
+  if (workspaceRootsRefreshSequence === 0) refreshClientWorkspaceRoots();
+  while (true) {
+    const sequence = workspaceRootsRefreshSequence;
+    await latestWorkspaceRootsRefresh;
+    if (sequence === workspaceRootsRefreshSequence) return;
+  }
 }
 
 function workspaceBoundaryFor(resolvedPath) {
@@ -144,18 +199,182 @@ function workspaceBoundaryFor(resolvedPath) {
 
 function assertInsideWorkspaceBoundary(resolvedPath, candidate) {
   if (workspaceBoundaryFor(resolvedPath)) return resolvedPath;
-  const error = new Error(
-    `Path is outside the configured workspace boundary: ${candidate}. Set ${ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS} to allow additional analysis roots.`,
-  );
+  const nextStep = CODEX_SESSION_ROOT_AUTHORIZATION_ENABLED
+    ? ` Ask the human whether to authorize the current Codex project or another directory, then use ${TOOL.PREPARE_WORKSPACE_ROOT}.`
+    : ` Set ${ENVIRONMENT_VARIABLE.WORKSPACE_ROOTS} to allow additional analysis roots.`;
+  const error = new Error(`Path is outside the configured workspace boundary: ${candidate}.${nextStep}`);
   error.code = ERROR_CODE.PATH_OUTSIDE_WORKSPACE_BOUNDARY;
-  error.details = {allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS};
+  error.details = {
+    allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS,
+    sessionWorkspaceRootAuthorizationAvailable: CODEX_SESSION_ROOT_AUTHORIZATION_ENABLED,
+  };
   throw error;
+}
+
+function workspaceRootAuthorizationError(code, message, details) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
+function assertSessionRootAuthorizationEnabled() {
+  if (CODEX_SESSION_ROOT_AUTHORIZATION_ENABLED) return;
+  throw workspaceRootAuthorizationError(
+    ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE,
+    "Session workspace-root authorization is unavailable. Use a host-provided MCP root or configure SEMANTIC_JS_MCP_WORKSPACE_ROOTS before starting the server.",
+  );
+}
+
+function pathContains(outer, inner) {
+  const relative = path.relative(outer, inner);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+async function canonicalSessionWorkspaceRoot(candidate) {
+  if (!path.isAbsolute(candidate)) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+      "Workspace-root authorization requires an absolute directory path.",
+    );
+  }
+  let resolved;
+  try {
+    resolved = await realpath(candidate);
+    if (!(await stat(resolved)).isDirectory()) {
+      throw new Error("not a directory");
+    }
+  } catch {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+      "The selected workspace root does not resolve to a readable directory.",
+    );
+  }
+  const filesystemRoot = path.parse(resolved).root;
+  const canonicalHome = await realpath(homedir()).catch(() => undefined);
+  if (resolved === filesystemRoot || (canonicalHome && pathContains(resolved, canonicalHome))) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_TOO_BROAD,
+      "The selected workspace root is too broad. Select one project or repository, not a filesystem root, home directory, or an ancestor of the home directory.",
+      {canonicalRoot: resolved},
+    );
+  }
+  return resolved;
+}
+
+function prunePendingSessionRootAuthorizations(now = Date.now()) {
+  for (const [authorizationRequestId, request] of pendingSessionRootAuthorizations) {
+    if (request.expiresAt > now) continue;
+    pendingSessionRootAuthorizations.delete(authorizationRequestId);
+  }
+  while (pendingSessionRootAuthorizations.size >= MAXIMUM_PENDING_SESSION_ROOT_AUTHORIZATIONS) {
+    const oldest = pendingSessionRootAuthorizations.keys().next().value;
+    pendingSessionRootAuthorizations.delete(oldest);
+  }
+}
+
+async function prepareSessionWorkspaceRoot(candidate) {
+  assertSessionRootAuthorizationEnabled();
+  await ensureWorkspaceBoundaryReady();
+  const canonicalRoot = await canonicalSessionWorkspaceRoot(candidate);
+  if (workspaceBoundaryFor(canonicalRoot)) {
+    return {
+      canonicalRoot,
+      authorizationRequired: false,
+      allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS,
+    };
+  }
+  const now = Date.now();
+  prunePendingSessionRootAuthorizations(now);
+  const authorizationRequestId = `workspace-root-${randomUUID()}`;
+  const authorizationRequestExpiresAt = now + SESSION_ROOT_AUTHORIZATION_TTL_MS;
+  pendingSessionRootAuthorizations.set(authorizationRequestId, {
+    canonicalRoot,
+    expiresAt: authorizationRequestExpiresAt,
+  });
+  return {
+    canonicalRoot,
+    authorizationRequired: true,
+    authorizationRequestId,
+    authorizationRequestExpiresAt,
+    allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS,
+  };
+}
+
+async function authorizeSessionWorkspaceRoot(authorizationRequestId, candidate) {
+  assertSessionRootAuthorizationEnabled();
+  const request = pendingSessionRootAuthorizations.get(authorizationRequestId);
+  pendingSessionRootAuthorizations.delete(authorizationRequestId);
+  if (!request) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+      "The workspace-root authorization request is invalid or was already used. Prepare the root again.",
+    );
+  }
+  if (request.expiresAt <= Date.now()) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_EXPIRED,
+      "The workspace-root authorization request expired. Prepare the root again and ask the human to reconfirm it.",
+      {canonicalRoot: request.canonicalRoot},
+    );
+  }
+  if (candidate !== request.canonicalRoot) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+      "The approved root does not exactly match the prepared canonical root. Prepare the root again.",
+      {preparedCanonicalRoot: request.canonicalRoot},
+    );
+  }
+  const canonicalRoot = await canonicalSessionWorkspaceRoot(candidate);
+  if (canonicalRoot !== request.canonicalRoot) {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_INVALID,
+      "The selected directory changed after preparation. Prepare the root again.",
+      {preparedCanonicalRoot: request.canonicalRoot, currentCanonicalRoot: canonicalRoot},
+    );
+  }
+  sessionWorkspaceRoots = [...new Set([...sessionWorkspaceRoots, canonicalRoot])];
+  const boundaryChanged = applyWorkspaceBoundaryRoots({invalidate: true});
+  return {
+    authorizedWorkspaceRoot: canonicalRoot,
+    allowedWorkspaceRoots: WORKSPACE_BOUNDARY_ROOTS,
+    boundaryChanged,
+    persistsAfterServerExit: false,
+  };
 }
 
 function childEnvironment(overrides = {}) {
   const environment = {...process.env, ...overrides};
   for (const name of CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES) delete environment[name];
   return environment;
+}
+
+function providerEnvironment(expectedChildEntry) {
+  return childEnvironment({
+    [PROVIDER_ENVIRONMENT_VARIABLE.READ_ROOTS]: JSON.stringify([...WORKSPACE_BOUNDARY_ROOTS, providerTemporaryDirectory]),
+    [PROVIDER_ENVIRONMENT_VARIABLE.WRITE_ROOTS]: JSON.stringify([providerTemporaryDirectory]),
+    [PROVIDER_ENVIRONMENT_VARIABLE.CHILD_ENTRY]: expectedChildEntry,
+    TMPDIR: providerTemporaryDirectory,
+    TMP: providerTemporaryDirectory,
+    TEMP: providerTemporaryDirectory,
+  });
+}
+
+function providerPermissionPaths(root) {
+  if (process.platform !== OPERATING_SYSTEM.MACOS && process.platform !== OPERATING_SYSTEM.WINDOWS) return [root];
+  return [...new Set([root, root.toLowerCase(), root.toUpperCase()])];
+}
+
+function providerNodeArguments({allowChildProcess = false} = {}) {
+  const readRoots = [...WORKSPACE_BOUNDARY_ROOTS, providerTemporaryDirectory].flatMap(providerPermissionPaths);
+  const writeRoots = providerPermissionPaths(providerTemporaryDirectory);
+  return [
+    "--permission",
+    ...readRoots.map((root) => `--allow-fs-read=${root}`),
+    ...writeRoots.map((root) => `--allow-fs-write=${root}`),
+    ...(allowChildProcess ? ["--allow-child-process", "--disable-warning=SecurityWarning"] : []),
+    `--import=${PROVIDER_FILESYSTEM_GUARD}`,
+  ];
 }
 const REQUEST_TIMEOUT_MS = DEFAULT.REQUEST_TIMEOUT_MS;
 const DIAGNOSTIC_WAIT_MS = DEFAULT.DIAGNOSTIC_WAIT_MS;
@@ -273,7 +492,14 @@ function isObject(value) {
 }
 
 function processCwd(workspaceRoot) {
-  if (CONFIGURED_PROCESS_CWD && existsSync(CONFIGURED_PROCESS_CWD)) return CONFIGURED_PROCESS_CWD;
+  if (CONFIGURED_PROCESS_CWD && existsSync(CONFIGURED_PROCESS_CWD)) {
+    try {
+      const configured = realpathSync(CONFIGURED_PROCESS_CWD);
+      if (workspaceBoundaryFor(configured)) return configured;
+    } catch {
+      // Fall back to the authorized workspace root.
+    }
+  }
   return workspaceRoot;
 }
 
@@ -337,6 +563,7 @@ function collectionStatus({stoppedByLimit, unresolvedCount = 0, failed = false})
 }
 
 async function existingDirectory(candidate) {
+  await ensureWorkspaceBoundaryReady();
   const resolved = await realpath(path.resolve(candidate));
   if (!(await stat(resolved)).isDirectory()) {
     throw new Error(`Not a directory: ${candidate}`);
@@ -345,6 +572,7 @@ async function existingDirectory(candidate) {
 }
 
 async function existingFile(candidate) {
+  await ensureWorkspaceBoundaryReady();
   const resolved = await realpath(path.resolve(candidate));
   if (!(await stat(resolved)).isFile()) {
     throw new Error(`Not a file: ${candidate}`);
@@ -546,7 +774,15 @@ function findTsdk(root) {
     let current = root;
     while (true) {
       const workspaceTsdk = path.join(current, "node_modules", RUNTIME_PACKAGE.TYPESCRIPT, "lib");
-      if (existsSync(path.join(workspaceTsdk, "tsserver.js"))) return workspaceTsdk;
+      const workspaceServer = path.join(workspaceTsdk, "tsserver.js");
+      if (existsSync(workspaceServer)) {
+        try {
+          const resolvedServer = realpathSync(workspaceServer);
+          if (workspaceBoundaryFor(resolvedServer)) return path.dirname(resolvedServer);
+        } catch {
+          // Ignore an unreadable or boundary-escaping workspace SDK.
+        }
+      }
       const parent = path.dirname(current);
       if (parent === current || current === boundaryLimit) break;
       current = parent;
@@ -574,13 +810,19 @@ class TsserverBridge {
     this.onExit = onExit;
     this.closed = false;
     this.processError = undefined;
-    const args = [path.join(tsdk, "tsserver.js"), "--useInferredProjectPerProjectRoot", "--disableAutomaticTypingAcquisition"];
+    this.boundaryGeneration = workspaceBoundaryGeneration;
+    const args = [
+      ...providerNodeArguments(),
+      path.join(tsdk, "tsserver.js"),
+      "--useInferredProjectPerProjectRoot",
+      "--disableAutomaticTypingAcquisition",
+    ];
     if (enableVuePlugin) {
       args.push("--globalPlugins", "@vue/typescript-plugin", "--pluginProbeLocations", runtimeNodeModules());
     }
     this.process = spawn(process.execPath, args, {
       cwd: processCwd(root),
-      env: childEnvironment(),
+      env: providerEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     process.stderr.write(`[${PRODUCT.NAME}:vue-tsserver] starting bridge ${this.process.pid}\n`);
@@ -668,7 +910,11 @@ class TsserverBridge {
       this.openFiles.add(file);
       await this.send("open", {file, projectRootPath: this.root}, false);
     }
-    return this.send(command, args);
+    const result = await this.send(command, args);
+    if (this.closed || this.boundaryGeneration !== workspaceBoundaryGeneration) {
+      throw new Error("Workspace boundary changed while the tsserver request was running");
+    }
+    return result;
   }
 
   rejectPending(error) {
@@ -703,6 +949,7 @@ class LspClient {
     this.onExit = onExit;
     this.closed = false;
     this.processError = undefined;
+    this.boundaryGeneration = workspaceBoundaryGeneration;
     this.ready = this.start();
   }
 
@@ -712,9 +959,11 @@ class LspClient {
       throw new Error(`Language server is not installed: ${entry}`);
     }
 
-    this.process = spawn(process.execPath, [entry, "--stdio"], {
+    const tsdk = findTsdk(this.root);
+    const expectedChildEntry = this.kind === LANGUAGE_ID.TYPESCRIPT ? path.join(tsdk, "tsserver.js") : undefined;
+    this.process = spawn(process.execPath, [...providerNodeArguments({allowChildProcess: Boolean(expectedChildEntry)}), entry, "--stdio"], {
       cwd: processCwd(this.root),
-      env: childEnvironment({PATH: `${path.join(runtimeNodeModules(), ".bin")}${path.delimiter}${process.env.PATH || ""}`}),
+      env: providerEnvironment(expectedChildEntry),
       stdio: ["pipe", "pipe", "pipe"],
     });
     process.stderr.write(`[${PRODUCT.NAME}:${this.kind}] starting provider ${this.process.pid}\n`);
@@ -743,7 +992,6 @@ class LspClient {
       );
     });
 
-    const tsdk = findTsdk(this.root);
     if (this.kind === LANGUAGE_ID.VUE) this.createTsserverBridge();
     const initializeResult = await this.request(
       "initialize",
@@ -766,7 +1014,7 @@ class LspClient {
         initializationOptions:
           this.kind === LANGUAGE_ID.VUE
             ? {typescript: {tsdk}, vue: {hybridMode: false}}
-            : {tsserver: {path: path.join(tsdk, "tsserver.js")}},
+            : {disableAutomaticTypingAcquisition: true, tsserver: {path: path.join(tsdk, "tsserver.js")}},
       },
       true,
     );
@@ -880,7 +1128,7 @@ class LspClient {
     this.process.stdin.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
   }
 
-  request(method, params, duringInitialization = false) {
+  async request(method, params, duringInitialization = false) {
     if (!duringInitialization && !this.process) throw new Error("Language server has not started");
     const id = this.nextId++;
     const response = this.pending.create(id, method);
@@ -889,7 +1137,11 @@ class LspClient {
     } catch (error) {
       this.pending.take(id)?.reject(error);
     }
-    return response;
+    const result = await response;
+    if (this.closed || this.boundaryGeneration !== workspaceBoundaryGeneration) {
+      throw new Error("Workspace boundary changed while the language-server request was running");
+    }
+    return result;
   }
 
   notify(method, params) {
@@ -1178,7 +1430,13 @@ function normalizeLocation(location) {
   const uri = location.uri || location.targetUri;
   const range = location.range || location.targetSelectionRange || location.targetRange;
   if (!uri || !range || !uri.startsWith("file:")) return undefined;
-  return {file: fromUri(uri), range: displayRange(range)};
+  try {
+    const file = realpathSync(fromUri(uri));
+    if (!workspaceBoundaryFor(file)) return undefined;
+    return {file, range: displayRange(range)};
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeLocations(value) {
@@ -1232,13 +1490,22 @@ async function typescriptServerDefinitionsAt(context, line, column) {
 function normalizeTsserverDefinitions(value) {
   return (value?.definitions || [])
     .filter((definition) => definition?.file && definition.start && definition.end)
-    .map((definition) => ({
-      file: path.resolve(definition.file),
-      range: {
-        start: {line: definition.start.line, column: definition.start.offset},
-        end: {line: definition.end.line, column: definition.end.offset},
-      },
-    }));
+    .map((definition) => {
+      try {
+        const file = realpathSync(definition.file);
+        if (!workspaceBoundaryFor(file)) return undefined;
+        return {
+          file,
+          range: {
+            start: {line: definition.start.line, column: definition.start.offset},
+            end: {line: definition.end.line, column: definition.end.offset},
+          },
+        };
+      } catch {
+        return undefined;
+      }
+    })
+    .filter(Boolean);
 }
 
 async function definitionsAtWithoutVueTemplateFallback(file, root, line, column) {
@@ -1593,6 +1860,13 @@ const referenceSetsById = new Map();
 const referenceSetIdByKey = new Map();
 const changedReferenceSetsById = new Map();
 
+function invalidateWorkspaceBoundaryState() {
+  for (const [key, entry] of [...clients.entries()]) closeClientEntry(key, entry);
+  referenceSetsById.clear();
+  referenceSetIdByKey.clear();
+  changedReferenceSetsById.clear();
+}
+
 class ReferenceSetStaleError extends Error {
   constructor(referenceSetId, details) {
     super("Reference set no longer matches current repository state. Call lsp_references again to collect current locations.");
@@ -1851,6 +2125,7 @@ async function getReferenceSet(context, line, column, includeDeclaration, crossW
 }
 
 async function getReferenceSetById(id) {
+  await ensureWorkspaceBoundaryReady();
   const now = Date.now();
   pruneReferenceSets(now);
   const entry = referenceSetsById.get(id);
@@ -1948,6 +2223,7 @@ function flattenDocumentSymbols(symbols, file, parent = [], output = [], depth =
   for (const symbol of symbols || []) {
     if (symbol.location) {
       const normalized = normalizeLocation(symbol.location);
+      if (!normalized) continue;
       output.push({name: symbol.name, kind: symbolKinds[symbol.kind - 1] || symbol.kind, container: symbol.containerName, ...normalized});
     } else {
       output.push({
@@ -2047,10 +2323,12 @@ function normalizeDiagnostics(raw, maxResults, provenance) {
     message: item.message,
     range: displayRange(item.range),
     ...provenance.locate(item.range),
-    relatedInformation: item.relatedInformation?.map((related) => ({
-      message: related.message,
-      ...normalizeLocation(related.location),
-    })),
+    relatedInformation: item.relatedInformation
+      ?.map((related) => {
+        const location = normalizeLocation(related.location);
+        return location ? {message: related.message, ...location} : undefined;
+      })
+      .filter(Boolean),
   }));
 }
 
@@ -2516,6 +2794,10 @@ function validatePublicResult(data) {
 
 function toolError(tool, error) {
   const message = error instanceof Error ? error.message : String(error);
+  const preparationAvailable =
+    (error?.code === ERROR_CODE.PATH_OUTSIDE_WORKSPACE_BOUNDARY && CODEX_SESSION_ROOT_AUTHORIZATION_ENABLED) ||
+    ROOT_PREPARATION_ERROR_CODES.has(error?.code);
+  const continueWith = preparationAvailable ? [TOOL.PREPARE_WORKSPACE_ROOT] : [];
   const data = {
     producer: {name: PRODUCT.NAME, version: SERVER_VERSION, resultSchemaVersion: RESULT_SCHEMA.VERSION},
     tool,
@@ -2523,7 +2805,7 @@ function toolError(tool, error) {
     result: {},
     collection: {status: COLLECTION_STATUS.FAILED, stoppedByLimit: false},
     presentation: {mode: PRESENTATION_MODE.ALL_ITEMS, itemsAvailable: 0, itemsReturned: 0, itemsReturnedAreSubset: false},
-    continueWith: [],
+    continueWith,
     error: {
       code: typeof error?.code === "string" ? error.code : ERROR_CODE.TOOL_EXECUTION_FAILED,
       message,
@@ -2549,11 +2831,14 @@ const positionSchema = {
   column: z.number().int().min(1).describe("1-based UTF-16 column number"),
 };
 const readOnly = {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false};
+const rootPreparation = {readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false};
+const rootAuthorization = {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false};
 
 try {
   verifyBundledRuntime();
   baseWorkspaceRoots = await resolveWorkspaceBoundaryRoots();
   applyWorkspaceBoundaryRoots();
+  providerTemporaryDirectory = await realpath(await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-provider-")));
 } catch (error) {
   process.stderr.write(
     `${JSON.stringify({
@@ -2568,6 +2853,69 @@ try {
 }
 
 const server = new McpServer({name: PRODUCT.NAME, version: SERVER_VERSION});
+
+server.registerTool(
+  TOOL.PREPARE_WORKSPACE_ROOT,
+  {
+    description: TOOL_DESCRIPTION[TOOL.PREPARE_WORKSPACE_ROOT],
+    inputSchema: {
+      root: z.string().describe("Absolute directory selected by the human; use the current Codex project unless they choose another"),
+    },
+    annotations: rootPreparation,
+  },
+  async ({root}) => {
+    const tool = TOOL.PREPARE_WORKSPACE_ROOT;
+    try {
+      const prepared = await prepareSessionWorkspaceRoot(root);
+      return toolResult(tool, {
+        request: {root},
+        result: prepared,
+        collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
+        presentation: {
+          mode: PRESENTATION_MODE.ALL_ITEMS,
+          itemsAvailable: 1,
+          itemsReturned: 1,
+          itemsReturnedAreSubset: false,
+        },
+        continueWith: [prepared.authorizationRequired ? TOOL.AUTHORIZE_WORKSPACE_ROOT : TOOL.DOCUMENT_SYMBOLS],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.AUTHORIZE_WORKSPACE_ROOT,
+  {
+    description: TOOL_DESCRIPTION[TOOL.AUTHORIZE_WORKSPACE_ROOT],
+    inputSchema: {
+      authorizationRequestId: z.string().describe(`One-time identifier returned by ${TOOL.PREPARE_WORKSPACE_ROOT}`),
+      root: z.string().describe(`Exact canonicalRoot returned by ${TOOL.PREPARE_WORKSPACE_ROOT}`),
+    },
+    annotations: rootAuthorization,
+  },
+  async ({authorizationRequestId, root}) => {
+    const tool = TOOL.AUTHORIZE_WORKSPACE_ROOT;
+    try {
+      const authorization = await authorizeSessionWorkspaceRoot(authorizationRequestId, root);
+      return toolResult(tool, {
+        request: {root},
+        result: authorization,
+        collection: {status: COLLECTION_STATUS.COMPLETE, stoppedByLimit: false},
+        presentation: {
+          mode: PRESENTATION_MODE.ALL_ITEMS,
+          itemsAvailable: 1,
+          itemsReturned: 1,
+          itemsReturnedAreSubset: false,
+        },
+        continueWith: [TOOL.DOCUMENT_SYMBOLS],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
 
 server.registerTool(
   TOOL.DOCUMENT_SYMBOLS,
@@ -3199,14 +3547,20 @@ async function shutdown() {
   referenceSetsById.clear();
   referenceSetIdByKey.clear();
   changedReferenceSetsById.clear();
+  pendingSessionRootAuthorizations.clear();
+  sessionWorkspaceRoots = [];
   await server.close().catch(() => undefined);
+  if (providerTemporaryDirectory) {
+    await removeTemporaryDirectory(providerTemporaryDirectory).catch(() => undefined);
+    providerTemporaryDirectory = undefined;
+  }
 }
 
 process.on(PROCESS_SIGNAL.INTERRUPT, () => void shutdown().finally(() => process.exit(0)));
 process.on(PROCESS_SIGNAL.TERMINATE, () => void shutdown().finally(() => process.exit(0)));
 
-server.server.oninitialized = () => void refreshClientWorkspaceRoots();
-server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => void refreshClientWorkspaceRoots());
+server.server.oninitialized = () => refreshClientWorkspaceRoots();
+server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => refreshClientWorkspaceRoots());
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

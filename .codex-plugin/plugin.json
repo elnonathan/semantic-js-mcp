@@ -12,7 +12,7 @@
   "interface": {
     "displayName": "Semantic JS MCP",
     "shortDescription": "Semantic understanding of JavaScript codebases for AI agents",
-    "longDescription": "Adds read-only, workspace-aware TypeScript, JavaScript, Node module, JSX, TSX, and Vue evidence using language servers, complete reference accounting, reusable paged collections, actionable unresolved candidates, and versioned diagnostics.",
+    "longDescription": "Adds read-only, workspace-aware TypeScript, JavaScript, Node module, JSX, TSX, and Vue evidence using language servers, human-approved process-lifetime roots, complete reference accounting, reusable paged collections, actionable unresolved candidates, and versioned diagnostics.",
     "developerName": "Jonathan Muñoz Lucas",
     "category": "Developer Tools",
     "capabilities": ["Read"],

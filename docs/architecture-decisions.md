@@ -83,3 +83,33 @@ Named-symbol tools report whether exact declaration filtering selected zero, one
 When selection is empty or ambiguous, continuation guidance points consumers toward structural or position-based tools. Reference-page guidance appears only when the response contains a reusable reference set. This keeps ambiguity actionable without guessing which homonymous symbol the consumer intended.
 
 A named audit may separately verify that an exact text occurrence resolves to a `fileHint` target. This binding evidence retains its source position, target definitions, resolution method, complete classification counts, and unresolved accounting. It does not promote the target filename or local alias into a named declaration, and the lighter count tool does not perform these per-match definition requests.
+
+## Provider Processes Use Revocable Root Snapshots
+
+The main MCP process remains the authority for host roots, explicit
+workspace-root configuration, and roots approved by a human for one Codex
+process. Each language-server or tsserver process starts with one immutable
+canonical-root snapshot enforced through Node.js filesystem permissions and a
+symlink-aware preload guard. Provider writes are limited to a server-owned
+temporary directory, and provider child-process creation is limited to the one
+bundled tsserver child required by `typescript-language-server`.
+
+An effective host-root change closes every existing provider and invalidates
+reference-set caches before another analysis starts. Root refreshes use a
+monotonic request sequence, so a delayed older `roots/list` response cannot
+restore authority removed by a newer response. The first file operation waits
+for the initial host-root response.
+
+Codex session authorization uses separate preparation and authorization
+operations. Preparation canonicalizes a human-selected directory without
+granting access and binds it to a short-lived, one-time identifier. The
+authorization operation is host-prompted, requires the exact canonical root,
+and keeps it only in MCP process memory. Generic hosts cannot enable this path,
+because an agent-controlled tool call without enforced human approval would
+not be workspace authority. Filesystem roots, home directories, and home
+ancestors are never accepted through this flow.
+
+This is a process-level defense for bundled providers, not permission to load
+arbitrary repository code. Workspace TypeScript remains disabled by default;
+enabling it explicitly trusts that SDK while retaining the same filesystem
+boundary.

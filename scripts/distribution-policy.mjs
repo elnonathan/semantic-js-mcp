@@ -9,8 +9,12 @@ export const REQUIRED_PACKAGE_FILE = Object.freeze({
   PROTOCOL: "protocol.mjs",
   RUNTIME: "lib/runtime.mjs",
   DOCTOR: "lib/doctor.mjs",
+  CODEX_SESSION_ROOT_AUTHORIZATION: "lib/codex-session-root-authorization.mjs",
+  PROVIDER_FILESYSTEM_GUARD: "lib/provider-filesystem-guard.mjs",
   MCP_CONFIGURATION: ".mcp.json",
   CODEX_PLUGIN_MANIFEST: ".codex-plugin/plugin.json",
+  CLAUDE_PLUGIN_MANIFEST: ".claude-plugin/plugin.json",
+  CLAUDE_MARKETPLACE_MANIFEST: ".claude-plugin/marketplace.json",
   SEMANTIC_NAVIGATION_SKILL: "skills/semantic-navigation/SKILL.md",
 });
 

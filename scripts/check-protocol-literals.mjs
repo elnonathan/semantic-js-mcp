@@ -67,6 +67,7 @@ import {
   RUNTIME_STATUS,
   UNRESOLVED_REFERENCE_REASON,
 } from "../protocol.mjs";
+import {CODEX_SESSION_ROOT_AUTHORIZATION} from "../lib/codex-session-root-authorization.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeSourceFiles = ["server.mjs", "cli.mjs", "lib/runtime.mjs", "lib/doctor.mjs", "lib/diagnostic-evidence.mjs"];
@@ -83,6 +84,17 @@ if (semanticServer?.startup_timeout_sec !== DEFAULT.MCP_STARTUP_TIMEOUT_SECONDS)
 }
 if (semanticServer?.tool_timeout_sec !== DEFAULT.MCP_TOOL_TIMEOUT_SECONDS) {
   throw new Error(".mcp.json tool_timeout_sec differs from protocol.mjs");
+}
+if (semanticServer?.default_tools_approval_mode !== "prompt") {
+  throw new Error(".mcp.json must prompt before Codex MCP tool calls");
+}
+if (semanticServer?.env?.[CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE] !== CODEX_SESSION_ROOT_AUTHORIZATION.ENABLED_VALUE) {
+  throw new Error(".mcp.json does not enable the Codex human-approved session-root boundary");
+}
+for (const tool of [TOOL.PREPARE_WORKSPACE_ROOT, TOOL.AUTHORIZE_WORKSPACE_ROOT]) {
+  if (semanticServer?.tools?.[tool]?.approval_mode !== "prompt") {
+    throw new Error(`.mcp.json does not require prompt approval for ${tool}`);
+  }
 }
 const groups = [
   COMMON_VALUE,

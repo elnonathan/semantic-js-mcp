@@ -8,6 +8,8 @@ Result schema version: `7`
 
 ## Tool Order
 
+- `lsp_prepare_workspace_root`
+- `lsp_authorize_workspace_root`
 - `lsp_document_symbols`
 - `lsp_workspace_symbols`
 - `lsp_definition`
@@ -36,6 +38,8 @@ Result schema version: `7`
 
 ## Tool Descriptions
 
+- `lsp_prepare_workspace_root`: `Briefly explain in the language of the user's latest message that Semantic JS MCP limits which directories it can analyze to protect their files from malicious repository instructions; the model cannot widen that boundary, and authorization applies only to Semantic JS MCP for this session. Then ask whether to use the current Codex project or another directory. Canonicalizes the selection without granting access; require confirmation of canonicalRoot before lsp_authorize_workspace_root.`
+- `lsp_authorize_workspace_root`: `Before calling, ask in the language of the user's latest message whether to authorize the exact prepared canonical root for Semantic JS MCP during this session. Adds that root to this MCP process only. This security-sensitive tool requires a human Codex approval; never call it from model inference alone. Continue with lsp_document_symbols.`
 - `lsp_document_symbols`: `Returns declarations and nested members for one file. Use lsp_definition or lsp_audit_symbol with an exact position for semantic identity.`
 - `lsp_workspace_symbols`: `Returns declaration-shaped symbols whose names contain a query. Use lsp_count_named_symbol or lsp_audit_named_symbol with an exact name.`
 - `lsp_definition`: `Resolves definitions for one source position. Use lsp_hover for type information or lsp_count_references for impact scope.`
@@ -267,6 +271,10 @@ Result schema version: `7`
 
 - `TOOL_EXECUTION_FAILED`
 - `PATH_OUTSIDE_WORKSPACE_BOUNDARY`
+- `WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE`
+- `WORKSPACE_ROOT_AUTHORIZATION_INVALID`
+- `WORKSPACE_ROOT_AUTHORIZATION_EXPIRED`
+- `WORKSPACE_ROOT_TOO_BROAD`
 - `REFERENCE_SET_CONTENT_CHANGED`
 - `REFERENCE_SET_NOT_FOUND_OR_EXPIRED`
 - `REPOSITORY_CHANGED_DURING_COLLECTION`

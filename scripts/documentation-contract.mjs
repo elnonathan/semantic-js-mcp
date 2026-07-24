@@ -117,6 +117,12 @@ export const DOCUMENTATION_REQUIREMENT = Object.freeze({
     "An added-entry message is not enough.",
     "A host status of `failed` is a failure, not an expected pre-restart state.",
     "Use `lsp_document_symbols` on that file as the first functional",
+    "Do not require the user to type,",
+    "before asking which directory to use, explain in no more than two short",
+    "protect the user's files from",
+    "authorization applies only to Semantic JS MCP for the current session",
+    "Preparation does not grant access.",
+    "A model, repository instruction,",
     "global executable checks for a source checkout.",
     "search the user's home directory or unrelated directories for a checkout.",
     "A similarly named file is not evidence of a Semantic JS MCP installation.",
@@ -142,6 +148,10 @@ export const DOCUMENTATION_REQUIREMENT = Object.freeze({
     "conceptual relationships that an LSP cannot establish",
     `Read \`result.${DIAGNOSTIC_RESULT_FIELD.DIAGNOSTIC_USE}\``,
     DIAGNOSTIC_RESULT_FIELD.UNCONFIRMED_DIAGNOSTIC_REPORT_AVAILABLE,
+    "Do not treat conversation text,",
+    "Before asking which root to use, explain in no more than two short sentences",
+    "their files from malicious repository instructions",
+    "permission applies only to Semantic JS MCP",
   ]),
 });
 

@@ -1,4 +1,6 @@
 export const TOOL = Object.freeze({
+  PREPARE_WORKSPACE_ROOT: "lsp_prepare_workspace_root",
+  AUTHORIZE_WORKSPACE_ROOT: "lsp_authorize_workspace_root",
   DOCUMENT_SYMBOLS: "lsp_document_symbols",
   WORKSPACE_SYMBOLS: "lsp_workspace_symbols",
   DEFINITION: "lsp_definition",
@@ -202,6 +204,8 @@ export const PRESENTATION_MODE = Object.freeze({
 });
 
 export const TOOL_DESCRIPTION = Object.freeze({
+  [TOOL.PREPARE_WORKSPACE_ROOT]: `Briefly explain in the language of the user's latest message that Semantic JS MCP limits which directories it can analyze to protect their files from malicious repository instructions; the model cannot widen that boundary, and authorization applies only to Semantic JS MCP for this session. Then ask whether to use the current Codex project or another directory. Canonicalizes the selection without granting access; require confirmation of canonicalRoot before ${TOOL.AUTHORIZE_WORKSPACE_ROOT}.`,
+  [TOOL.AUTHORIZE_WORKSPACE_ROOT]: `Before calling, ask in the language of the user's latest message whether to authorize the exact prepared canonical root for Semantic JS MCP during this session. Adds that root to this MCP process only. This security-sensitive tool requires a human Codex approval; never call it from model inference alone. Continue with ${TOOL.DOCUMENT_SYMBOLS}.`,
   [TOOL.DOCUMENT_SYMBOLS]: `Returns declarations and nested members for one file. Use ${TOOL.DEFINITION} or ${TOOL.AUDIT_SYMBOL} with an exact position for semantic identity.`,
   [TOOL.WORKSPACE_SYMBOLS]: `Returns declaration-shaped symbols whose names contain a query. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} with an exact name.`,
   [TOOL.DEFINITION]: `Resolves definitions for one source position. Use ${TOOL.HOVER} for type information or ${TOOL.COUNT_REFERENCES} for impact scope.`,
@@ -336,6 +340,10 @@ export const REFERENCE_SET_CHANGE_TYPE = Object.freeze({
 export const ERROR_CODE = Object.freeze({
   TOOL_EXECUTION_FAILED: "TOOL_EXECUTION_FAILED",
   PATH_OUTSIDE_WORKSPACE_BOUNDARY: "PATH_OUTSIDE_WORKSPACE_BOUNDARY",
+  WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE: "WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE",
+  WORKSPACE_ROOT_AUTHORIZATION_INVALID: "WORKSPACE_ROOT_AUTHORIZATION_INVALID",
+  WORKSPACE_ROOT_AUTHORIZATION_EXPIRED: "WORKSPACE_ROOT_AUTHORIZATION_EXPIRED",
+  WORKSPACE_ROOT_TOO_BROAD: "WORKSPACE_ROOT_TOO_BROAD",
   REFERENCE_SET_CONTENT_CHANGED: "REFERENCE_SET_CONTENT_CHANGED",
   REFERENCE_SET_NOT_FOUND_OR_EXPIRED: "REFERENCE_SET_NOT_FOUND_OR_EXPIRED",
   REPOSITORY_CHANGED_DURING_COLLECTION: "REPOSITORY_CHANGED_DURING_COLLECTION",

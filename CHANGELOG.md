@@ -15,8 +15,11 @@ All notable changes to this project will be documented in this file.
 - Drop `NODE_OPTIONS`, `NODE_PATH`, and `NODE_REPL_EXTERNAL_MODULE` from the environment of spawned processes (`rg`, tsserver, language servers).
 - Handle malformed language-server output defensively: ignore non-`file:` URIs, skip incomplete tsserver definitions, and bound document-symbol recursion depth.
 - Remove unreachable `clientForRoot` dead code.
-- Replace `default_tools_approval_mode: "auto"` with `"prompt"` in `.mcp.json` so Codex asks before every `lsp_` tool call. Tools remain read-only; hosts that manage permissions themselves are unaffected.
+- Replace `default_tools_approval_mode: "auto"` with `"prompt"` in `.mcp.json` so Codex asks before every `lsp_` tool call. Semantic evidence tools remain read-only; the later session-root authorization tool is separately annotated security-sensitive and destructive.
 - Allow the Codex plugin to forward `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` and `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT` from Codex's environment to the bundled server.
+- Constrain language-server and tsserver processes to an immutable canonical-root snapshot with Node.js filesystem permissions, a symlink-aware preload guard, server-owned temporary storage, restricted provider child processes, and boundary filtering on provider locations, verified by an adversarial provider-guard smoke that confirms reads, writes, globs, symlink escapes, and child processes are denied outside the boundary. Disable TypeScript automatic typing acquisition explicitly.
+- Apply host root refreshes atomically: the first tool call waits for the initial `roots/list`, delayed stale responses cannot replace newer roots, and every effective root change closes providers and invalidates reference-set caches.
+- Add a Codex-only, human-mediated session-root flow. Before asking for a project, the agent briefly explains in the user's language that Semantic JS MCP limits which directories it can analyze to protect files from malicious repository instructions, cannot be widened by the model, and receives authorization only for the current session. `lsp_prepare_workspace_root` canonicalizes the selected project without granting access; `lsp_authorize_workspace_root` consumes a short-lived one-time request only after Codex surfaces its destructive, prompt-required call. Authorized roots stay in MCP memory, invalidate providers and reference sets when added, reject filesystem/home-scale roots, and disappear when the process exits.
 
 ### Changed
 
@@ -28,6 +31,7 @@ All notable changes to this project will be documented in this file.
 
 - Honor the MCP `roots` capability. When the host advertises `roots` (for example Claude Code), the server unions the host-provided workspace directories into the boundary after initialization and on `roots/list_changed`, so no `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` is needed on those hosts. Authority stays with the host; the unset, no-roots default stays restrictive.
 - Add a Claude Code plugin and marketplace catalog (`.claude-plugin/`) so the MCP server and the semantic-navigation skill install with `/plugin marketplace add` and `/plugin install`. The `claude mcp add` route remains available for the server alone.
+- Require Claude Code 2.1.203 or newer for complete dynamic roots support, pin the npm plugin source to exact version 0.11.0, keep version authority only in `plugin.json`, and document native verification, update, rollback, and removal paths.
 
 ## [0.10.4] - 2026-07-20
 

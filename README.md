@@ -38,7 +38,13 @@ Version `0.11.0` is the current release. APIs and result contracts may evolve wh
 - Node.js 24 LTS is recommended for new installations. See the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 - `rg` (ripgrep) must be available on `PATH` for repository-wide discovery.
 - The bundled TypeScript SDK is used by default. The analyzed repository's own `node_modules/typescript` is used only when `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set.
-- Analysis is confined to a workspace boundary: the directory the server was started in and the package root. Paths outside it are rejected with `PATH_OUTSIDE_WORKSPACE_BOUNDARY`. Hosts that advertise the MCP `roots` capability (for example Claude Code) provide the active workspace automatically, so no variable is needed there. The Codex plugin starts the server from its installed package directory, so set `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` (path-delimiter-separated) in Codex's environment to the repositories it may analyze before starting Codex.
+- Analysis is confined to a workspace boundary: the directory the server was started in and the package root. Paths outside it are rejected with `PATH_OUTSIDE_WORKSPACE_BOUNDARY`. Hosts that advertise the MCP `roots` capability (for example Claude Code) provide the active workspace automatically. In Codex, the agent proposes the current project or another human-selected directory, canonicalizes it without granting access, and adds it only after a separate human-approved tool call. That authorization exists only for the MCP process lifetime. `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` remains available for explicitly preconfigured roots in other or non-interactive hosts.
+- Language servers and tsserver run with a fixed snapshot of the canonical
+  workspace roots. Node.js filesystem permissions, a symlink-aware path guard,
+  temporary-directory-only writes, provider-child restrictions, and output
+  filtering keep provider imports and cached results inside that snapshot.
+  Changing host roots closes providers and invalidates reference sets before
+  new analysis.
 - TypeScript, `typescript-language-server`, the Vue language server, and `@vue/typescript-plugin` are pinned dependencies. Published packages bundle every production dependency so Codex installations do not require a separate dependency installation step. Startup verifies provider entry points before accepting MCP requests.
 - Source discovery and language selection include `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`, and `.vue` files.
 - Run `npm run check:runtime` to report every required component and its resolved file path.
