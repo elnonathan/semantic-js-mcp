@@ -19,6 +19,12 @@ its one expected bundled tsserver child; all other provider child-process
 creation is denied. Provider locations outside the current boundary are also
 discarded before a tool result is returned.
 
+Provider filesystem watch operations are inert on every platform. An inert
+watcher never resolves the supplied path or reaches Node.js filesystem
+permissions; analyzed documents are synchronized explicitly through the
+provider protocol. This avoids granting broader read access merely to support
+platform-specific polling watchers.
+
 The Codex plugin enables a two-stage, host-mediated session authorization
 flow. `lsp_prepare_workspace_root` canonicalizes one directory selected by the
 human but does not grant access. The human must confirm the returned exact

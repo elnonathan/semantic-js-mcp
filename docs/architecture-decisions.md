@@ -93,6 +93,10 @@ canonical-root snapshot enforced through Node.js filesystem permissions and a
 symlink-aware preload guard. Provider writes are limited to a server-owned
 temporary directory, and provider child-process creation is limited to the one
 bundled tsserver child required by `typescript-language-server`.
+Provider filesystem watchers are replaced with inert handles on every
+platform. Document synchronization is explicit, and avoiding the underlying
+watch APIs prevents platform-dependent permission checks from becoming a
+reason to widen the immutable root snapshot.
 
 An effective host-root change closes every existing provider and invalidates
 reference-set caches before another analysis starts. Root refreshes use a
