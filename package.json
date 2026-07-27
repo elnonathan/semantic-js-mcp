@@ -76,7 +76,7 @@
   },
   "overrides": {
     "@emmetio/css-parser": "0.4.1",
-    "@hono/node-server": "^2.0.5"
+    "@hono/node-server": "2.0.12"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

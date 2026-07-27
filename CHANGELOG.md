@@ -24,7 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Resolve `@emmetio/css-parser` from the npm registry instead of a Git branch, and require `@hono/node-server` >= 2.0.5, via `overrides`.
+- Resolve `@emmetio/css-parser` from the npm registry instead of a Git branch, and pin `@hono/node-server` to 2.0.12, via `overrides`.
 - Declare `@vue/typescript-plugin` as a direct, bundled dependency (previously relied on as a transitive).
 - Update `@modelcontextprotocol/sdk` to 1.29.0, `@vue/language-server` to 3.3.8, `typescript-language-server` to 5.3.0, `@vue/compiler-sfc` to 3.5.40, `zod` to 4.4.3, and `prettier` to 3.9.6. `npm audit` reports no known vulnerabilities.
 
