@@ -2,13 +2,22 @@
 
 import path from "node:path";
 import {deepStrictEqual} from "node:assert";
-import {mkdtemp, mkdir, readFile, writeFile} from "node:fs/promises";
+import {mkdtemp, mkdir, readFile, realpath, symlink, unlink, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {fileURLToPath} from "node:url";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {parse as parseYaml} from "yaml";
-import {fileIdentity, locationKey, locationKeyAt, locationKeyForOperatingSystem} from "../lib/file-identity.mjs";
+import {
+  canonicalPathInsideBoundary,
+  fileIdentity,
+  fileIdentityContains,
+  filesystemPermissionPaths,
+  locationKey,
+  locationKeyAt,
+  locationKeyForOperatingSystem,
+} from "../lib/file-identity.mjs";
+import {BLOCKED_CHILD_PROCESS_ENVIRONMENT_VARIABLES, sanitizedChildEnvironment} from "../lib/child-process-environment.mjs";
 import {diagnosticUseSummary} from "../lib/diagnostic-evidence.mjs";
 import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
@@ -50,6 +59,20 @@ const forbiddenPublicKeys = new Set(FORBIDDEN_PUBLIC_FIELD);
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+
+const inheritedChildEnvironment = Object.fromEntries(
+  BLOCKED_CHILD_PROCESS_ENVIRONMENT_VARIABLES.map((name) => [name, "attacker-controlled"]),
+);
+inheritedChildEnvironment.SEMANTIC_JS_MCP_SAFE_ENVIRONMENT_PROBE = "preserved";
+const safeChildEnvironment = sanitizedChildEnvironment(inheritedChildEnvironment);
+assert(
+  BLOCKED_CHILD_PROCESS_ENVIRONMENT_VARIABLES.every((name) => !(name in safeChildEnvironment)),
+  "A blocked child-process environment variable survived sanitization",
+);
+assert(
+  safeChildEnvironment.SEMANTIC_JS_MCP_SAFE_ENVIRONMENT_PROBE === "preserved",
+  "Child-process environment sanitization removed an unrelated variable",
+);
 
 const unversionedDiagnosticUse = diagnosticUseSummary({versionConfirmed: false, reportReceived: true});
 deepStrictEqual(
@@ -103,6 +126,14 @@ assert(
   "Windows source-position identity bypassed canonical location identity",
 );
 assert(
+  fileIdentityContains("C:\\Repository", "c:/repository/src/example.ts", OPERATING_SYSTEM.WINDOWS),
+  "Windows workspace containment retained path casing or separator differences",
+);
+assert(
+  !fileIdentityContains("C:\\Repository", "C:\\Repository-sibling\\src\\example.ts", OPERATING_SYSTEM.WINDOWS),
+  "Windows workspace containment accepted a sibling path prefix",
+);
+assert(
   [windowsLocation].map(locationKey)[0] === locationKey(windowsLocation),
   "The host location key consumed the Array.map callback index",
 );
@@ -111,7 +142,25 @@ for (const operatingSystem of [OPERATING_SYSTEM.LINUX, OPERATING_SYSTEM.MACOS]) 
     fileIdentity("/Repository/src/Example.ts", operatingSystem) !== fileIdentity("/repository/src/example.ts", operatingSystem),
     `${operatingSystem} file identity discarded path casing`,
   );
+  deepStrictEqual(
+    filesystemPermissionPaths("/Repository/MixedCase", {operatingSystem}),
+    ["/Repository/MixedCase"],
+    `${operatingSystem} filesystem permissions included unnecessary case variants`,
+  );
 }
+deepStrictEqual(
+  filesystemPermissionPaths("C:\\Repository\\MixedCase", {operatingSystem: OPERATING_SYSTEM.WINDOWS}),
+  ["C:\\Repository\\MixedCase", "c:\\repository\\mixedcase", "C:\\REPOSITORY\\MIXEDCASE"],
+  "Windows filesystem permissions omitted required case variants",
+);
+deepStrictEqual(
+  filesystemPermissionPaths("/Temporary/MixedCase", {
+    operatingSystem: OPERATING_SYSTEM.MACOS,
+    includeMacOSCaseVariants: true,
+  }),
+  ["/Temporary/MixedCase", "/temporary/mixedcase", "/TEMPORARY/MIXEDCASE"],
+  "macOS temporary filesystem permissions omitted the language-server case probe variants",
+);
 
 function assertNoAmbiguousKeys(value, location = "structuredContent") {
   if (Array.isArray(value)) {
@@ -226,6 +275,26 @@ await writeFile(
   targetFile,
   ["/** Returns the next integer. */", "export function repeatedTarget(value: number): number {", "  return value + 1;", "}"].join("\n"),
 );
+const outsideBoundary = await mkdtemp(path.join(tmpdir(), "semantic-js-mcp-boundary-filter-smoke-"));
+const outsideBoundaryFile = path.join(outsideBoundary, "outside.ts");
+const boundaryEscapingLink = path.join(src, "outside-link.ts");
+try {
+  await writeFile(outsideBoundaryFile, "export const outsideBoundaryValue = 1;\n");
+  await symlink(outsideBoundaryFile, boundaryEscapingLink);
+  const canonicalWorkspace = await realpath(workspace);
+  const insideBoundary = (candidate) => fileIdentityContains(canonicalWorkspace, candidate);
+  assert(
+    (await canonicalPathInsideBoundary(targetFile, insideBoundary)) === (await realpath(targetFile)),
+    "Workspace candidate canonicalization rejected an in-boundary file",
+  );
+  assert(
+    (await canonicalPathInsideBoundary(boundaryEscapingLink, insideBoundary)) === undefined,
+    "Workspace candidate canonicalization accepted a symlink escape",
+  );
+} finally {
+  await unlink(boundaryEscapingLink).catch(() => undefined);
+  await removeTemporaryDirectory(outsideBoundary);
+}
 const calls = Array.from({length: 250}, (_, index) => `  repeatedTarget(${index}),`).join("\n");
 await writeFile(usageFile, ['import {repeatedTarget} from "./target.js";', "export const values = [", calls, "];"].join("\n"));
 await writeFile(
@@ -982,6 +1051,7 @@ try {
         diagnosticContentFreshness: "ok",
         diagnosticProvenance: "ok",
         automaticMemoryCleanup: "ok",
+        candidateBoundaryFilter: "ok",
         ambiguousPublicFields: "absent",
       },
       null,

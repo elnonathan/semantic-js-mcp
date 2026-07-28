@@ -13,13 +13,21 @@ import {RootsListChangedNotificationSchema} from "@modelcontextprotocol/sdk/type
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
-import {fileIdentity, locationKey, locationKeyAt} from "./lib/file-identity.mjs";
+import {
+  canonicalPathInsideBoundary,
+  fileIdentity,
+  fileIdentityContains,
+  filesystemPermissionPaths,
+  locationKey,
+  locationKeyAt,
+} from "./lib/file-identity.mjs";
 import {diagnosticUseSummary} from "./lib/diagnostic-evidence.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
 import {collectStableSnapshot} from "./lib/stable-collection.mjs";
 import {removeTemporaryDirectory} from "./lib/temporary-directory.mjs";
 import {CODEX_SESSION_ROOT_AUTHORIZATION} from "./lib/codex-session-root-authorization.mjs";
+import {sanitizedChildEnvironment} from "./lib/child-process-environment.mjs";
 import {
   ACCOUNTING_STATUS,
   COLLECTION_STATUS,
@@ -83,12 +91,6 @@ const CONFIGURED_PROCESS_CWD = process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD]
   ? path.resolve(process.env[ENVIRONMENT_VARIABLE.PROCESS_CWD])
   : undefined;
 const ALLOW_WORKSPACE_TYPESCRIPT = /^(?:1|true)$/i.test(process.env[ENVIRONMENT_VARIABLE.ALLOW_WORKSPACE_TYPESCRIPT] || "");
-const CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES = Object.freeze([
-  "NODE_OPTIONS",
-  "NODE_PATH",
-  "NODE_REPL_EXTERNAL_MODULE",
-  CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE,
-]);
 const PROVIDER_ENVIRONMENT_VARIABLE = Object.freeze({
   READ_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_READ_ROOTS",
   WRITE_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_WRITE_ROOTS",
@@ -190,7 +192,7 @@ async function ensureWorkspaceBoundaryReady() {
 function workspaceBoundaryFor(resolvedPath) {
   let match;
   for (const root of WORKSPACE_BOUNDARY_ROOTS) {
-    if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${path.sep}`)) continue;
+    if (!fileIdentityContains(root, resolvedPath)) continue;
     // Prefer the outermost (shortest) containing root so repository discovery can walk up to it.
     if (!match || root.length < match.length) match = root;
   }
@@ -226,9 +228,35 @@ function assertSessionRootAuthorizationEnabled() {
   );
 }
 
-function pathContains(outer, inner) {
-  const relative = path.relative(outer, inner);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+function protectedSessionRootCandidates(filesystemRoot) {
+  if (process.platform === OPERATING_SYSTEM.WINDOWS) {
+    return [
+      path.join(filesystemRoot, "Program Files"),
+      path.join(filesystemRoot, "Program Files (x86)"),
+      path.join(filesystemRoot, "ProgramData"),
+      path.join(filesystemRoot, "Windows"),
+      tmpdir(),
+    ];
+  }
+  const common = ["/bin", "/dev", "/etc", "/opt", "/sbin", "/usr", "/var", tmpdir()];
+  if (process.platform !== OPERATING_SYSTEM.MACOS) return common;
+  return [...common, "/Applications", "/Library", "/private", "/System", "/Volumes"];
+}
+
+async function canonicalProtectedSessionRoots(filesystemRoot) {
+  const roots = [];
+  for (const candidate of protectedSessionRootCandidates(filesystemRoot)) {
+    try {
+      roots.push(await realpath(candidate));
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw workspaceRootAuthorizationError(
+        ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE,
+        "Session workspace-root authorization is unavailable because a protected system directory could not be verified safely.",
+      );
+    }
+  }
+  return [...new Set(roots)];
 }
 
 async function canonicalSessionWorkspaceRoot(candidate) {
@@ -251,11 +279,24 @@ async function canonicalSessionWorkspaceRoot(candidate) {
     );
   }
   const filesystemRoot = path.parse(resolved).root;
-  const canonicalHome = await realpath(homedir()).catch(() => undefined);
-  if (resolved === filesystemRoot || (canonicalHome && pathContains(resolved, canonicalHome))) {
+  let canonicalHome;
+  try {
+    canonicalHome = await realpath(homedir());
+  } catch {
+    throw workspaceRootAuthorizationError(
+      ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE,
+      "Session workspace-root authorization is unavailable because the home-directory boundary could not be verified safely.",
+    );
+  }
+  const protectedRoots = await canonicalProtectedSessionRoots(filesystemRoot);
+  if (
+    fileIdentity(resolved) === fileIdentity(filesystemRoot) ||
+    fileIdentityContains(resolved, canonicalHome) ||
+    protectedRoots.some((root) => fileIdentity(root) === fileIdentity(resolved))
+  ) {
     throw workspaceRootAuthorizationError(
       ERROR_CODE.WORKSPACE_ROOT_TOO_BROAD,
-      "The selected workspace root is too broad. Select one project or repository, not a filesystem root, home directory, or an ancestor of the home directory.",
+      "The selected workspace root is too broad. Select one project or repository, not a filesystem root, home boundary, temporary root, or protected system directory.",
       {canonicalRoot: resolved},
     );
   }
@@ -344,8 +385,8 @@ async function authorizeSessionWorkspaceRoot(authorizationRequestId, candidate) 
 }
 
 function childEnvironment(overrides = {}) {
-  const environment = {...process.env, ...overrides};
-  for (const name of CHILD_PROCESS_BLOCKED_ENVIRONMENT_VARIABLES) delete environment[name];
+  const environment = sanitizedChildEnvironment({...process.env, ...overrides});
+  delete environment[CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE];
   return environment;
 }
 
@@ -360,14 +401,12 @@ function providerEnvironment(expectedChildEntry) {
   });
 }
 
-function providerPermissionPaths(root) {
-  if (process.platform !== OPERATING_SYSTEM.MACOS && process.platform !== OPERATING_SYSTEM.WINDOWS) return [root];
-  return [...new Set([root, root.toLowerCase(), root.toUpperCase()])];
-}
-
 function providerNodeArguments({allowChildProcess = false} = {}) {
-  const readRoots = [...WORKSPACE_BOUNDARY_ROOTS, providerTemporaryDirectory].flatMap(providerPermissionPaths);
-  const writeRoots = providerPermissionPaths(providerTemporaryDirectory);
+  const readRoots = [
+    ...WORKSPACE_BOUNDARY_ROOTS.flatMap((root) => filesystemPermissionPaths(root)),
+    ...filesystemPermissionPaths(providerTemporaryDirectory, {includeMacOSCaseVariants: true}),
+  ];
+  const writeRoots = filesystemPermissionPaths(providerTemporaryDirectory);
   return [
     "--permission",
     ...readRoots.map((root) => `--allow-fs-read=${root}`),
@@ -709,6 +748,7 @@ async function rgIdentifierCandidates(root, identifier, maxCandidates, wholeIden
   );
   const candidates = [];
   const candidateFiles = new Set();
+  const canonicalFiles = new Map();
   let totalCandidateCount = 0;
   for (const recordLine of output.split("\n")) {
     if (!recordLine) continue;
@@ -719,7 +759,12 @@ async function rgIdentifierCandidates(root, identifier, maxCandidates, wholeIden
       continue;
     }
     if (record.type !== "match") continue;
-    const file = path.isAbsolute(record.data.path.text) ? record.data.path.text : path.resolve(root, record.data.path.text);
+    const reportedFile = path.isAbsolute(record.data.path.text) ? record.data.path.text : path.resolve(root, record.data.path.text);
+    if (!canonicalFiles.has(reportedFile)) {
+      canonicalFiles.set(reportedFile, canonicalPathInsideBoundary(reportedFile, workspaceBoundaryFor));
+    }
+    const file = await canonicalFiles.get(reportedFile);
+    if (!file) continue;
     const lineText = record.data.lines.text;
     for (const match of record.data.submatches || []) {
       const prefix = Buffer.from(lineText, "utf8").subarray(0, match.start).toString("utf8");

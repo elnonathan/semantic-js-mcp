@@ -93,10 +93,23 @@ canonical-root snapshot enforced through Node.js filesystem permissions and a
 symlink-aware preload guard. Provider writes are limited to a server-owned
 temporary directory, and provider child-process creation is limited to the one
 bundled tsserver child required by `typescript-language-server`.
-Provider filesystem watchers are replaced with inert handles on every
-platform. Document synchronization is explicit, and avoiding the underlying
-watch APIs prevents platform-dependent permission checks from becoming a
-reason to widen the immutable root snapshot.
+The preload authorizes that fork through a one-use internal spawn gate and
+rebuilds its options from a pre-provider snapshot: the executable, working
+directory, filesystem permissions, roots, and sanitized environment are
+server-controlled. Direct use of the public `ChildProcess` class or
+`process.execve`, caller-supplied `execPath`, and caller-supplied child
+environment remain denied.
+Provider filesystem watchers remain inert on macOS and Linux. Windows
+providers may use their polling watchers only for canonical paths inside the
+immutable read-root snapshot. Outside paths, symlink escapes, and Node.js
+permission mismatches degrade to inert handles instead of widening that
+snapshot. Windows workspace-boundary and provider-location comparisons share
+case-insensitive file identity so valid provider results are not discarded
+solely because drive or path casing differs. Node.js permission arguments use
+case variants for workspace roots only on Windows; macOS and Linux receive
+exact canonical workspace roots. The server-owned macOS temporary directory
+also receives the read-path variants required by the language server's
+case-sensitivity probe.
 
 An effective host-root change closes every existing provider and invalidates
 reference-set caches before another analysis starts. Root refreshes use a
@@ -110,8 +123,10 @@ granting access and binds it to a short-lived, one-time identifier. The
 authorization operation is host-prompted, requires the exact canonical root,
 and keeps it only in MCP process memory. Generic hosts cannot enable this path,
 because an agent-controlled tool call without enforced human approval would
-not be workspace authority. Filesystem roots, home directories, and home
-ancestors are never accepted through this flow.
+not be workspace authority. Filesystem roots, home directories and their
+ancestors, temporary roots, and protected system directories are never
+accepted through this flow. Failure to verify the home or protected-system
+boundary disables preparation rather than assuming the root is safe.
 
 This is a process-level defense for bundled providers, not permission to load
 arbitrary repository code. Workspace TypeScript remains disabled by default;

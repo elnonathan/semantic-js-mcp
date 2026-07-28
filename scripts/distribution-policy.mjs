@@ -10,6 +10,7 @@ export const REQUIRED_PACKAGE_FILE = Object.freeze({
   RUNTIME: "lib/runtime.mjs",
   DOCTOR: "lib/doctor.mjs",
   CODEX_SESSION_ROOT_AUTHORIZATION: "lib/codex-session-root-authorization.mjs",
+  CHILD_PROCESS_ENVIRONMENT: "lib/child-process-environment.mjs",
   PROVIDER_FILESYSTEM_GUARD: "lib/provider-filesystem-guard.mjs",
   MCP_CONFIGURATION: ".mcp.json",
   CODEX_PLUGIN_MANIFEST: ".codex-plugin/plugin.json",

@@ -137,6 +137,11 @@ const homePreparation = await callTool(authorizationClient, TOOL.PREPARE_WORKSPA
 const homeAncestorPreparation = await callTool(authorizationClient, TOOL.PREPARE_WORKSPACE_ROOT, {
   root: path.dirname(homedir()),
 });
+const protectedSystemRoot =
+  process.platform === "win32" ? path.join(path.parse(workspace).root, "Windows") : process.platform === "darwin" ? "/Library" : "/usr";
+const protectedSystemRootPreparation = await callTool(authorizationClient, TOOL.PREPARE_WORKSPACE_ROOT, {
+  root: protectedSystemRoot,
+});
 const firstPreparation = await callTool(authorizationClient, TOOL.PREPARE_WORKSPACE_ROOT, {root: workspace});
 const firstPrepared = firstPreparation.structuredContent?.result;
 const afterPreparationBeforeAuthorization = await callTool(authorizationClient, TOOL.DOCUMENT_SYMBOLS, {file});
@@ -196,6 +201,25 @@ await restartedAuthorizationClient.connect(restartedAuthorizationTransport);
 const afterServerRestart = await callTool(restartedAuthorizationClient, TOOL.DOCUMENT_SYMBOLS, {file});
 await restartedAuthorizationClient.close();
 
+const missingHome = path.join(path.parse(workspace).root, "semantic-js-mcp-missing-home-boundary");
+const unavailableHomeClient = new Client({name: "semantic-js-mcp-unavailable-home-smoke", version: "1.0.0"}, {capabilities: {}});
+const unavailableHomeTransport = new StdioClientTransport({
+  command: process.execPath,
+  args: [path.join(pluginRoot, "server.mjs")],
+  cwd: pluginRoot,
+  env: {
+    ...process.env,
+    HOME: missingHome,
+    USERPROFILE: missingHome,
+    HOMEDRIVE: path.parse(missingHome).root,
+    HOMEPATH: missingHome.slice(path.parse(missingHome).root.length),
+    [CODEX_SESSION_ROOT_AUTHORIZATION.ENVIRONMENT_VARIABLE]: CODEX_SESSION_ROOT_AUTHORIZATION.ENABLED_VALUE,
+  },
+});
+await unavailableHomeClient.connect(unavailableHomeTransport);
+const unavailableHomePreparation = await callTool(unavailableHomeClient, TOOL.PREPARE_WORKSPACE_ROOT, {root: workspace});
+await unavailableHomeClient.close();
+
 const codexMcpConfiguration = JSON.parse(await readFile(path.join(pluginRoot, ".mcp.json"), "utf8"));
 const codexServerConfiguration = codexMcpConfiguration.mcpServers?.["semantic-js-mcp"];
 
@@ -247,6 +271,12 @@ const results = {
   homeAncestorCannotBePrepared:
     homeAncestorPreparation.isError === true &&
     homeAncestorPreparation.structuredContent?.error?.code === ERROR_CODE.WORKSPACE_ROOT_TOO_BROAD,
+  protectedSystemRootCannotBePrepared:
+    protectedSystemRootPreparation.isError === true &&
+    protectedSystemRootPreparation.structuredContent?.error?.code === ERROR_CODE.WORKSPACE_ROOT_TOO_BROAD,
+  unverifiableHomeBoundaryFailsClosed:
+    unavailableHomePreparation.isError === true &&
+    unavailableHomePreparation.structuredContent?.error?.code === ERROR_CODE.WORKSPACE_ROOT_AUTHORIZATION_UNAVAILABLE,
   preparationCanonicalizesWithoutAuthorizing:
     firstPreparation.isError !== true &&
     firstPrepared?.canonicalRoot === (await realpath(workspace)) &&

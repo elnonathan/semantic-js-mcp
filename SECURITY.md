@@ -8,7 +8,26 @@ The MCP client is an AI agent whose tool arguments may be influenced by untruste
 
 ### Workspace boundary
 
-Every `file` and `root` argument is resolved through `realpath` — so symbolic links cannot escape — and must stay inside the allowed analysis roots. By default those are the directory the server was started in and the package installation root. Requests outside the boundary fail with the `PATH_OUTSIDE_WORKSPACE_BOUNDARY` error code and never read file content. Repository discovery (walking up to find `.git` or project markers) and cross-workspace text scans are clamped to the same boundary.
+Every `file` and `root` argument is resolved through `realpath` at validation
+time and must stay inside the allowed analysis roots, so an existing symbolic
+link cannot escape the boundary. By default those are the directory the server
+was started in and the package installation root. Requests outside the boundary
+fail with the `PATH_OUTSIDE_WORKSPACE_BOUNDARY` error code and never read file
+content. Repository discovery (walking up to find `.git` or project markers)
+and cross-workspace text scans are clamped to the same boundary. Each file
+reported by ripgrep is independently canonicalized and re-filtered before it
+can affect counts, verified references, or evidence-file metadata.
+
+The boundary check and the later filesystem operation are not an atomic
+`openat`-style path walk. A separate local process that can concurrently replace
+a previously validated path component could race `realpath` and the subsequent
+read. This is an accepted limitation: Node.js does not expose one portable API
+that opens every path component without following links across the supported
+platforms, and `O_NOFOLLOW` protects only the final component. The threat model
+covers untrusted repository contents and tool arguments, not an untrusted local
+actor with concurrent write access to the workspace during analysis. Analyze
+only workspaces that are not being actively mutated by such a process; operating
+system permissions remain the security boundary against local actors.
 
 Bundled language servers and tsserver processes receive an immutable snapshot
 of those canonical roots through the Node.js permission model. They can read
@@ -16,14 +35,27 @@ only that snapshot and a server-owned temporary directory, and can write only
 inside that temporary directory. A preload guard rejects canonical paths that
 escape through symbolic links and restricts the TypeScript language server to
 its one expected bundled tsserver child; all other provider child-process
-creation is denied. Provider locations outside the current boundary are also
-discarded before a tool result is returned.
+creation is denied. That one fork uses the Node executable, working directory,
+permission arguments, canonical roots, and sanitized environment captured
+before provider code runs; caller-supplied `execPath`, environment, and
+unsupported stdio are not accepted. Direct `ChildProcess.prototype.spawn` and
+`process.execve` calls remain denied even when Node grants the provider its
+required child-process permission. Provider locations outside the current
+boundary are also discarded before a tool result is returned.
 
-Provider filesystem watch operations are inert on every platform. An inert
-watcher never resolves the supplied path or reaches Node.js filesystem
-permissions; analyzed documents are synchronized explicitly through the
-provider protocol. This avoids granting broader read access merely to support
-platform-specific polling watchers.
+Provider filesystem watch operations never widen the read roots. They remain
+inert on macOS and Linux. On Windows, where TypeScript uses polling watchers,
+the guard delegates a real watch only after the path resolves inside the
+immutable provider root snapshot. Lexically outside paths and canonical
+symlink escapes return inert handles without reaching the watch API; a Node.js
+filesystem-permission mismatch, including one encountered during canonical
+resolution, also degrades to an inert handle. Workspace
+boundary and provider-location comparisons use case-insensitive file identity
+on Windows. Workspace permission arguments include case variants only on
+Windows; macOS and Linux receive each canonical workspace root exactly as
+resolved. The server-owned macOS temporary directory additionally receives the
+read-path case variants required by the language server's
+filesystem-sensitivity probe.
 
 The Codex plugin enables a two-stage, host-mediated session authorization
 flow. `lsp_prepare_workspace_root` canonicalizes one directory selected by the
@@ -35,12 +67,14 @@ security-sensitive and destructive, and the Codex plugin configures it for
 the root only to the running MCP process. It is never written to configuration
 and disappears when that process exits.
 
-Filesystem roots, the home directory, and ancestors of the home directory
-cannot be session-authorized. A mismatched, expired, or replayed preparation
-fails without changing the boundary. The flow is disabled outside the Codex
-plugin because a generic MCP host may not enforce the required human approval.
-Conversation text, model inference, repository instructions, and a prepared
-request are not authorization.
+Filesystem roots, the home directory, ancestors of the home directory,
+temporary roots, and protected system directories cannot be
+session-authorized. If the server cannot canonicalize the home or protected
+system boundary, authorization fails closed. A mismatched, expired, or
+replayed preparation fails without changing the boundary. The flow is disabled
+outside the Codex plugin because a generic MCP host may not enforce the
+required human approval. Conversation text, model inference, repository
+instructions, and a prepared request are not authorization.
 
 To preconfigure additional directories instead, set
 `SEMANTIC_JS_MCP_WORKSPACE_ROOTS` to a path-delimiter-separated list of allowed
@@ -58,7 +92,7 @@ cannot retain access granted by an earlier root snapshot.
 
 ### No execution of repository-provided code
 
-The server always runs the TypeScript SDK bundled with this package. It does not execute `node_modules/typescript` from the analyzed repository unless `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set explicitly, and even then discovery never walks above the workspace boundary or follows a TypeScript SDK symlink outside it. Enabling that variable explicitly trusts the selected workspace SDK as executable provider code; the filesystem restrictions are defense in depth, not a general sandbox for deliberately malicious provider code. TypeScript plugins load only from the bundled runtime probe location; local plugin loads from the analyzed repository are disabled. Language servers run with a sanitized environment (`NODE_OPTIONS`, `NODE_PATH`, and `NODE_REPL_EXTERNAL_MODULE` are removed) so inherited variables cannot inject code into child processes.
+The server always runs the TypeScript SDK bundled with this package. It does not execute `node_modules/typescript` from the analyzed repository unless `SEMANTIC_JS_MCP_ALLOW_WORKSPACE_TYPESCRIPT=1` is set explicitly, and even then discovery never walks above the workspace boundary or follows a TypeScript SDK symlink outside it. Enabling that variable explicitly trusts the selected workspace SDK as executable provider code; the filesystem restrictions are defense in depth, not a general sandbox for deliberately malicious provider code. TypeScript plugins load only from the bundled runtime probe location; local plugin loads from the analyzed repository are disabled. Spawned processes receive a sanitized environment: Node code-loading, TLS/CA, ICU, native-loader, and output-path variables such as `NODE_OPTIONS`, `NODE_PATH`, `NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `NODE_ICU_DATA`, `LD_PRELOAD`, and `DYLD_INSERT_LIBRARIES` are removed before launch.
 
 ### Read-only surface
 
@@ -78,6 +112,15 @@ as a ripgrep flag (no argument injection).
 Runtime dependencies are pinned exactly in `package.json`, resolved from the npm registry with integrity hashes in `package-lock.json` (no git dependencies), and bundled into the published package via `bundleDependencies` so installs are deterministic. Known-vulnerable transitive versions are excluded through `overrides`. Keep `npm audit` at zero findings before every release.
 
 This server communicates only over stdio. The `@modelcontextprotocol/sdk` dependency also carries an HTTP/SSE transport stack (for example `express`, `hono`, `cors`, `body-parser`, `qs`) as transitive dependencies. Those packages are bundled but are never imported or executed on the stdio path, so they are not reachable attack surface at runtime; they may still appear in dependency scans and SBOMs. They cannot be pruned without changes upstream in the SDK.
+
+The self-contained tarball deliberately preserves the files published by each
+bundled dependency, including upstream tests and fixtures. Those inert files
+increase artifact size and package-scanner surface, but Semantic JS MCP does not
+import or execute them. The release does not rewrite dependency packages to
+prune them because doing so could remove resources that a dependency resolves
+dynamically and would replace the registry artifact with a locally modified
+tree. Exact package-surface inspection and `npm audit` cover the resulting
+distribution tradeoff before release.
 
 ## Supported Versions
 

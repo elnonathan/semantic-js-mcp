@@ -41,6 +41,14 @@ The distribution smoke performs these checks:
 
 The temporary installation uses an empty, isolated npm cache with offline mode. Published packages bundle every production dependency, matching Codex installation behavior without resolving dependencies from the registry after download. Normal semantic analysis requires no network access once the package is available.
 
+That self-contained artifact intentionally retains the complete npm-published
+contents of bundled dependencies, including upstream tests and fixtures. These
+files increase package size but remain inert; preserving them avoids rewriting
+third-party packages or accidentally removing resources resolved dynamically at
+runtime. Release review therefore inspects the exact tarball surface and audits
+the complete bundled dependency tree instead of pruning selected upstream
+paths.
+
 ## Source Validation
 
 Run the complete local validation sequence before reviewing a distribution change:
