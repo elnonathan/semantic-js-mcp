@@ -88,11 +88,28 @@ A named audit may separately verify that an exact text occurrence resolves to a 
 
 The main MCP process remains the authority for host roots, explicit
 workspace-root configuration, and roots approved by a human for one Codex
-process. Each language-server or tsserver process starts with one immutable
-canonical-root snapshot enforced through Node.js filesystem permissions and a
-symlink-aware preload guard. Provider writes are limited to a server-owned
-temporary directory, and provider child-process creation is limited to the one
-bundled tsserver child required by `typescript-language-server`.
+process. Each language-server or tsserver process is bound to one immutable canonical-root
+snapshot by two mechanisms: a symlink-aware preload guard that mediates the
+filesystem and child-process APIs in JavaScript, and, where active, the Node.js
+permission model that enforces the snapshot in the runtime. Provider writes are
+limited to a server-owned temporary directory, and provider child-process
+creation is limited to the one bundled tsserver child required by
+`typescript-language-server`. On macOS and Linux both apply: beyond the guard,
+the permission model also refuses filesystem access from routes the guard cannot
+patch — Worker threads, native addons, WASI, or `process.binding`. Node documents
+it as hardening for trusted code rather than a complete sandbox, so it raises the
+bar substantially without absolutely guaranteeing containment of a fully
+compromised process. On Windows the permission model is currently disabled for
+providers because it
+rejects some tsserver reads whose Windows path form differs from the granted
+roots, breaking navigation; the preload guard is the sole layer there. The guard
+mediates the APIs it patches — sufficient for the trusted, pinned, bundled
+providers — but it is not a sandbox for a compromised provider, which could
+bypass it through the same Worker, native-addon, WASI, or `process.binding`
+routes. This is a deliberate, documented Windows-only trade-off that rests on the
+bundled providers being trusted; restoring the permission model on Windows is the
+priority follow-up, and internal toggles force it on and trace denied paths for
+diagnosis on a Windows host.
 The preload authorizes that fork through a one-use internal spawn gate and
 rebuilds its options from a pre-provider snapshot: the executable, working
 directory, filesystem permissions, roots, and sanitized environment are

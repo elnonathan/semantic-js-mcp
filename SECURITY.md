@@ -29,19 +29,42 @@ actor with concurrent write access to the workspace during analysis. Analyze
 only workspaces that are not being actively mutated by such a process; operating
 system permissions remain the security boundary against local actors.
 
-Bundled language servers and tsserver processes receive an immutable snapshot
-of those canonical roots through the Node.js permission model. They can read
-only that snapshot and a server-owned temporary directory, and can write only
-inside that temporary directory. A preload guard rejects canonical paths that
-escape through symbolic links and restricts the TypeScript language server to
-its one expected bundled tsserver child; all other provider child-process
-creation is denied. That one fork uses the Node executable, working directory,
-permission arguments, canonical roots, and sanitized environment captured
-before provider code runs; caller-supplied `execPath`, environment, and
-unsupported stdio are not accepted. Direct `ChildProcess.prototype.spawn` and
-`process.execve` calls remain denied even when Node grants the provider its
-required child-process permission. Provider locations outside the current
-boundary are also discarded before a tool result is returned.
+Bundled language servers and tsserver processes run behind two mechanisms bound
+to an immutable canonical-root snapshot: an in-process preload guard, imported
+into every provider, that mediates Node's filesystem and child-process APIs in
+JavaScript; and, where it is active, the Node.js permission model, which also
+restricts filesystem access in the runtime. For the APIs they mediate, these
+mechanisms permit reads only within that snapshot and a server-owned temporary
+directory, permit writes only inside that temporary directory, reject canonical
+paths that escape through symbolic links, restrict the TypeScript language
+server to its one expected bundled tsserver child, and deny all other provider
+child-process creation. That one fork is rebuilt from a pre-provider executable,
+working directory, root, environment, and (where active) permission snapshot;
+caller-supplied `execPath`, environment, and unsupported stdio are refused, and
+direct `ChildProcess.prototype.spawn` and `process.execve` calls are denied.
+Provider locations outside the current boundary are also discarded before a
+tool result is returned.
+
+On macOS and Linux both mechanisms apply. Beyond the JavaScript guard, the
+permission model also refuses filesystem access from routes the guard cannot
+patch — a Worker thread with a fresh `fs`, a native addon, WASI, or
+`process.binding` — which the guard alone cannot stop. Node documents the
+permission model as a hardening measure for trusted code rather than a complete
+sandbox, so it raises the bar substantially without being an absolute guarantee
+against a fully compromised process. On Windows the permission model is currently
+disabled for providers because it rejects some tsserver reads whose Windows path
+form differs from the granted roots, which breaks navigation, so the preload
+guard is the sole layer there. The guard mediates the filesystem and
+child-process APIs it patches, which is sufficient for the trusted, pinned,
+bundled providers' normal operation, but it is not a sandbox for a compromised
+provider: arbitrary provider code could bypass it through those same Worker,
+native-addon, WASI, or `process.binding` routes. On Windows, provider-execution
+safety therefore rests on the bundled, version-pinned providers being trusted
+(and on the workspace TypeScript SDK remaining an explicit, opt-in trust
+decision). Restoring the permission model on Windows is the priority follow-up;
+the internal `SEMANTIC_JS_MCP_INTERNAL_WINDOWS_PROVIDER_PERMISSION` and
+`SEMANTIC_JS_MCP_INTERNAL_PROVIDER_PERMISSION_TRACE` toggles exist to reproduce
+and diagnose that mismatch on a Windows host, and the trace prints full paths.
 
 Provider filesystem watch operations never widen the read roots. They remain
 inert on macOS and Linux. On Windows, where TypeScript uses polling watchers,

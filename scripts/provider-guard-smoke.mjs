@@ -13,6 +13,7 @@ import {mkdtemp, mkdir, writeFile, symlink, realpath} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
+import {providerPermissionArguments, providerPermissionModelActive} from "../lib/provider-permission.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const guard = pathToFileURL(path.join(pluginRoot, "lib", "provider-filesystem-guard.mjs")).href;
@@ -43,6 +44,7 @@ const report = {
   writeRoots: process.env.SEMANTIC_JS_MCP_INTERNAL_PROVIDER_WRITE_ROOTS,
   childEntry: process.env.SEMANTIC_JS_MCP_INTERNAL_PROVIDER_CHILD_ENTRY,
   untrusted: process.env.PROBE_UNTRUSTED_ENV,
+  nodePermissionModelPresent: typeof process.permission !== "undefined",
   outsideReadDenied: (() => {
     try {
       fs.readFileSync(process.env.PROBE_OUTSIDE_FILE, "utf8");
@@ -139,6 +141,10 @@ const cp = require("node:child_process");
 const path = require("node:path");
 const denied = (fn) => {
   try { fn(); return false; }
+  catch (error) { return Boolean(error) && error.code === "ERR_ACCESS_DENIED"; }
+};
+const deniedAsync = async (fn) => {
+  try { await fn(); return false; }
   catch (error) { return Boolean(error) && error.code === "ERR_ACCESS_DENIED"; }
 };
 const inertWatcher = (create) => {
@@ -287,6 +293,23 @@ const collectForkEnvironment = () => new Promise((resolve) => {
     outsideOpenAsBlobDenied: denied(() => fs.openAsBlob(process.env.PROBE_OUTSIDE_FILE)),
     symlinkEscapeDenied: denied(() => fs.readFileSync(process.env.PROBE_SYMLINK, "utf8")),
     outsideWriteDenied: denied(() => fs.writeFileSync(process.env.PROBE_OUTSIDE_WRITE, "x")),
+    mkdtempDisposableDenied:
+      typeof fs.mkdtempDisposableSync === "function"
+        ? denied(() => fs.mkdtempDisposableSync(process.env.PROBE_OUTSIDE_WRITE))
+        : true,
+    mkdtempDisposableAsyncDenied:
+      typeof fs.promises.mkdtempDisposable === "function"
+        ? await deniedAsync(() => fs.promises.mkdtempDisposable(process.env.PROBE_OUTSIDE_WRITE))
+        : true,
+    esmMkdtempDisposableDenied:
+      typeof esmFs.mkdtempDisposableSync === "function"
+        ? denied(() => esmFs.mkdtempDisposableSync(process.env.PROBE_OUTSIDE_WRITE))
+        : true,
+    esmMkdtempDisposableAsyncDenied:
+      typeof esmFsPromises.mkdtempDisposable === "function"
+        ? await deniedAsync(() => esmFsPromises.mkdtempDisposable(process.env.PROBE_OUTSIDE_WRITE))
+        : true,
+    nodePermissionModelPresent: typeof process.permission !== "undefined",
     globDenied: typeof fs.globSync === "function" ? denied(() => fs.globSync("**/*")) : true,
     childProcessDenied: denied(() => cp.execSync("id")),
     processExecveDenied:
@@ -297,6 +320,7 @@ const collectForkEnvironment = () => new Promise((resolve) => {
     forkExecPathOverrideDenied,
     providerForkPolicyCorrect,
     providerForkEnvironmentSealed,
+    forkChildPermissionModelPresent: providerForkEnvironment ? providerForkEnvironment.nodePermissionModelPresent === true : null,
     insideWatchCallsSucceeded,
     insideWatchDelegationCorrect:
       watcherCallCount("watch") === expectedDelegations &&
@@ -327,7 +351,7 @@ const collectForkEnvironment = () => new Promise((resolve) => {
 });
 `;
 
-function runProbe({forceWindows = false, permissionMode = "none"} = {}) {
+function runProbe({forceWindows = false, permissionMode = "none", windowsPermissionForced = false} = {}) {
   const permissionArguments =
     permissionMode === "none"
       ? []
@@ -348,6 +372,7 @@ function runProbe({forceWindows = false, permissionMode = "none"} = {}) {
         SEMANTIC_JS_MCP_INTERNAL_PROVIDER_READ_ROOTS: JSON.stringify([root, pluginRoot]),
         SEMANTIC_JS_MCP_INTERNAL_PROVIDER_WRITE_ROOTS: JSON.stringify([root]),
         SEMANTIC_JS_MCP_INTERNAL_PROVIDER_CHILD_ENTRY: providerChildEntry,
+        SEMANTIC_JS_MCP_INTERNAL_WINDOWS_PROVIDER_PERMISSION: windowsPermissionForced ? "1" : "0",
         PROBE_FORCE_WINDOWS: forceWindows ? "1" : "0",
         PROBE_EXPECT_PROVIDER_FORK: permissionMode === "deny-child-process" ? "0" : "1",
         PROBE_INSIDE_FILE: insideFile,
@@ -367,13 +392,22 @@ function runProbe({forceWindows = false, permissionMode = "none"} = {}) {
   return JSON.parse(child.stdout);
 }
 
+const isWindows = process.platform === "win32";
 const probes = {
+  // On real Windows this is the Windows-default posture; elsewhere it is POSIX.
   layer2Native: runProbe(),
-  ...(process.platform === "win32" ? {} : {layer2SimulatedWindows: runProbe({forceWindows: true})}),
+  // Simulate the Windows-default posture only off Windows.
+  ...(isWindows ? {} : {layer2SimulatedWindows: runProbe({forceWindows: true})}),
+  // Windows-forced posture on every platform: the permission model is present in
+  // both parent (allow-child-process) and forked child (windowsPermissionForced).
+  windowsForced: runProbe({forceWindows: !isWindows, permissionMode: "allow-child-process", windowsPermissionForced: true}),
   permissionWithoutChildProcess: runProbe({permissionMode: "deny-child-process"}),
   permissionWithChildProcess: runProbe({permissionMode: "allow-child-process"}),
 };
 console.log(JSON.stringify(probes, null, 2));
+
+// The Windows-default posture is real on Windows and simulated elsewhere.
+const windowsDefaultProbe = isWindows ? probes.layer2Native : probes.layer2SimulatedWindows;
 
 const expected = {
   insideReadAllowed: true,
@@ -382,6 +416,10 @@ const expected = {
   outsideOpenAsBlobDenied: true,
   symlinkEscapeDenied: true,
   outsideWriteDenied: true,
+  mkdtempDisposableDenied: true,
+  mkdtempDisposableAsyncDenied: true,
+  esmMkdtempDisposableDenied: true,
+  esmMkdtempDisposableAsyncDenied: true,
   globDenied: true,
   childProcessDenied: true,
   processExecveDenied: true,
@@ -405,5 +443,36 @@ const expected = {
   watchSymlinkEscapeBenign: true,
   promisesWatchSymlinkEscapeBenign: true,
 };
-const ok = Object.values(probes).every((results) => Object.entries(expected).every(([key, value]) => results[key] === value));
-process.exit(ok ? 0 : 1);
+// Posture selection is deterministic and platform-parameterized: Windows uses the
+// guard alone by default, forces the permission model with the toggle, and every
+// other platform always adds it. The runtime probes then confirm the permission
+// model is actually absent under guard-only and present when granted.
+const posture = {
+  windowsDefaultOmitsPermission:
+    providerPermissionArguments({operatingSystem: "win32", windowsPermissionForced: false, readRoots: [root], writeRoots: [root]})
+      .length === 0,
+  windowsForcedAddsPermission: providerPermissionArguments({
+    operatingSystem: "win32",
+    windowsPermissionForced: true,
+    readRoots: [root],
+    writeRoots: [root],
+  }).includes("--permission"),
+  posixAddsPermission: providerPermissionArguments({operatingSystem: "linux", readRoots: [root], writeRoots: [root]})[0] === "--permission",
+  modelInactiveWindowsDefault: providerPermissionModelActive({operatingSystem: "win32"}) === false,
+  modelActiveWindowsForced: providerPermissionModelActive({operatingSystem: "win32", windowsPermissionForced: true}) === true,
+  modelActivePosix: providerPermissionModelActive({operatingSystem: "darwin"}) === true,
+  // Runtime parent+child evidence per posture. On real Windows layer2Native is the
+  // Windows-default posture; off Windows layer2SimulatedWindows simulates it and
+  // layer2Native is POSIX (only meaningful off Windows).
+  windowsDefaultParentHasNoPermissionModel: windowsDefaultProbe.nodePermissionModelPresent === false,
+  windowsDefaultForkChildHasNoPermissionModel: windowsDefaultProbe.forkChildPermissionModelPresent === false,
+  windowsForcedParentHasPermissionModel: probes.windowsForced.nodePermissionModelPresent === true,
+  windowsForcedForkChildHasPermissionModel: probes.windowsForced.forkChildPermissionModelPresent === true,
+  posixParentHasPermissionModel: isWindows ? true : probes.permissionWithChildProcess.nodePermissionModelPresent === true,
+  posixForkChildHasPermissionModel: isWindows ? true : probes.layer2Native.forkChildPermissionModelPresent === true,
+};
+console.log(JSON.stringify({posture}, null, 2));
+
+const probesOk = Object.values(probes).every((results) => Object.entries(expected).every(([key, value]) => results[key] === value));
+const postureOk = Object.values(posture).every(Boolean);
+process.exit(probesOk && postureOk ? 0 : 1);

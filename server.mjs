@@ -13,14 +13,8 @@ import {RootsListChangedNotificationSchema} from "@modelcontextprotocol/sdk/type
 import * as z from "zod/v4";
 import {stringify as stringifyYaml} from "yaml";
 import {PACKAGE_ROOT, inspectRuntimeComponents, resolveRuntimeComponent, runtimeDependencyRoot} from "./lib/runtime.mjs";
-import {
-  canonicalPathInsideBoundary,
-  fileIdentity,
-  fileIdentityContains,
-  filesystemPermissionPaths,
-  locationKey,
-  locationKeyAt,
-} from "./lib/file-identity.mjs";
+import {canonicalPathInsideBoundary, fileIdentity, fileIdentityContains, locationKey, locationKeyAt} from "./lib/file-identity.mjs";
+import {providerPermissionArguments} from "./lib/provider-permission.mjs";
 import {diagnosticUseSummary} from "./lib/diagnostic-evidence.mjs";
 import {isNamedSymbolTool, namedSemanticEvidence, namedSemanticEvidenceMatches} from "./lib/semantic-evidence.mjs";
 import {PendingRequestRegistry} from "./lib/pending-requests.mjs";
@@ -95,6 +89,8 @@ const PROVIDER_ENVIRONMENT_VARIABLE = Object.freeze({
   READ_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_READ_ROOTS",
   WRITE_ROOTS: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_WRITE_ROOTS",
   CHILD_ENTRY: "SEMANTIC_JS_MCP_INTERNAL_PROVIDER_CHILD_ENTRY",
+  // Force the Node permission model back on for Windows providers (diagnosis only).
+  WINDOWS_PERMISSION: "SEMANTIC_JS_MCP_INTERNAL_WINDOWS_PROVIDER_PERMISSION",
 });
 const PROVIDER_FILESYSTEM_GUARD = path.join(PLUGIN_ROOT, "lib", "provider-filesystem-guard.mjs");
 const SESSION_ROOT_AUTHORIZATION_TTL_MS = 5 * 60 * 1000;
@@ -402,18 +398,22 @@ function providerEnvironment(expectedChildEntry) {
 }
 
 function providerNodeArguments({allowChildProcess = false} = {}) {
-  const readRoots = [
-    ...WORKSPACE_BOUNDARY_ROOTS.flatMap((root) => filesystemPermissionPaths(root)),
-    ...filesystemPermissionPaths(providerTemporaryDirectory, {includeMacOSCaseVariants: true}),
-  ];
-  const writeRoots = filesystemPermissionPaths(providerTemporaryDirectory);
-  return [
-    "--permission",
-    ...readRoots.map((root) => `--allow-fs-read=${root}`),
-    ...writeRoots.map((root) => `--allow-fs-write=${root}`),
-    ...(allowChildProcess ? ["--allow-child-process", "--disable-warning=SecurityWarning"] : []),
-    `--import=${pathToFileURL(PROVIDER_FILESYSTEM_GUARD).href}`,
-  ];
+  // The in-process guard preload always applies. The Node permission model is
+  // added only where it is active (macOS and Linux, or Windows with the internal
+  // toggle set for diagnosis). Without the permission model there is no
+  // child-process capability to relax, so `--allow-child-process` is added only
+  // alongside `--permission`; the guard's JavaScript child-process denial is the
+  // sole gate otherwise.
+  const guardImport = `--import=${pathToFileURL(PROVIDER_FILESYSTEM_GUARD).href}`;
+  const permissionArguments = providerPermissionArguments({
+    operatingSystem: process.platform,
+    windowsPermissionForced: process.env[PROVIDER_ENVIRONMENT_VARIABLE.WINDOWS_PERMISSION] === "1",
+    readRoots: [...WORKSPACE_BOUNDARY_ROOTS, providerTemporaryDirectory],
+    writeRoots: [providerTemporaryDirectory],
+  });
+  const childProcessArguments =
+    permissionArguments.length > 0 && allowChildProcess ? ["--allow-child-process", "--disable-warning=SecurityWarning"] : [];
+  return [...permissionArguments, ...childProcessArguments, guardImport];
 }
 const REQUEST_TIMEOUT_MS = DEFAULT.REQUEST_TIMEOUT_MS;
 const DIAGNOSTIC_WAIT_MS = DEFAULT.DIAGNOSTIC_WAIT_MS;
