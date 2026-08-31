@@ -1,7 +1,7 @@
 {
   "name": "semantic-js-mcp",
   "displayName": "Semantic JS MCP",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Semantic understanding of JavaScript codebases for AI agents",
   "author": {
     "name": "Jonathan Muñoz Lucas"

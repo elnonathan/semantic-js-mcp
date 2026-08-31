@@ -24,6 +24,9 @@ import {CODEX_SESSION_ROOT_AUTHORIZATION} from "./lib/codex-session-root-authori
 import {sanitizedChildEnvironment} from "./lib/child-process-environment.mjs";
 import {
   ACCOUNTING_STATUS,
+  CALL_HIERARCHY_DIRECTION,
+  CALL_HIERARCHY_EVIDENCE,
+  CALL_HIERARCHY_UNRESOLVED_REASON,
   COLLECTION_STATUS,
   COMMON_VALUE,
   CONTENT_FRESHNESS,
@@ -75,6 +78,8 @@ import {
   SOURCE_EXTENSION,
   SOURCE_FILE_GLOBS,
   UNRESOLVED_REFERENCE_REASON,
+  UNRESOLVED_REFERENCE_CONTEXT,
+  UNRESOLVED_REFERENCE_FOLLOW_UP,
   VUE_SCRIPT_LANGUAGE,
 } from "./protocol.mjs";
 
@@ -497,6 +502,7 @@ const diagnosticSeverities = Object.values(DIAGNOSTIC_SEVERITY);
 const diagnosticProviders = Object.freeze({
   [LANGUAGE_ID.TYPESCRIPT]: DIAGNOSTIC_PROVIDER.TYPESCRIPT_LANGUAGE_SERVER,
   [LANGUAGE_ID.VUE]: DIAGNOSTIC_PROVIDER.VUE_LANGUAGE_SERVER,
+  [DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER]: DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER,
 });
 const vueEmbeddedLanguages = Object.freeze({
   [VUE_SCRIPT_LANGUAGE.TYPESCRIPT]: DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
@@ -560,6 +566,33 @@ function displayPosition(position) {
 
 function displayRange(range) {
   return {start: displayPosition(range.start), end: displayPosition(range.end)};
+}
+
+function normalizeTsserverDiagnostic(item) {
+  const start = item?.startLocation;
+  const end = item?.endLocation;
+  if (!start || !end) return undefined;
+  const category = typeof item.category === "string" ? item.category.toLowerCase() : item.category;
+  const severity =
+    category === DIAGNOSTIC_SEVERITY.ERROR || category === 1
+      ? 1
+      : category === DIAGNOSTIC_SEVERITY.WARNING || category === 0
+        ? 2
+        : category === "suggestion" || category === 2
+          ? 4
+          : 3;
+  const message =
+    typeof item.text === "string" ? item.text : typeof item.message === "string" ? item.message : String(item.messageText || "");
+  return {
+    severity,
+    code: item.code,
+    source: DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
+    message,
+    range: {
+      start: {line: start.line - 1, character: start.offset - 1},
+      end: {line: end.line - 1, character: end.offset - 1},
+    },
+  };
 }
 
 function limit(items, maxResults) {
@@ -850,7 +883,8 @@ class TsserverBridge {
       timeoutMilliseconds: REQUEST_TIMEOUT_MS,
       timeoutMessage: (command) => `tsserver request timed out: ${command}`,
     });
-    this.openFiles = new Set();
+    this.openFiles = new Map();
+    this.openFileSynchronizations = new Map();
     this.buffer = Buffer.alloc(0);
     this.onExit = onExit;
     this.closed = false;
@@ -949,12 +983,29 @@ class TsserverBridge {
     return response;
   }
 
-  async request(command, args) {
-    const file = args?.file;
-    if (file && !this.openFiles.has(file)) {
-      this.openFiles.add(file);
-      await this.send("open", {file, projectRootPath: this.root}, false);
+  async synchronizeOpenFile(file, suppliedText) {
+    const previous = this.openFileSynchronizations.get(file) || Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const fileContent = suppliedText ?? (await readFile(file, "utf8"));
+        const fingerprint = textFingerprint(fileContent);
+        if (this.openFiles.get(file) === fingerprint) return;
+        if (this.openFiles.has(file)) await this.send(NODE_EVENT.CLOSE, {file}, false);
+        await this.send("open", {file, fileContent, projectRootPath: this.root}, false);
+        this.openFiles.set(file, fingerprint);
+      });
+    this.openFileSynchronizations.set(file, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.openFileSynchronizations.get(file) === operation) this.openFileSynchronizations.delete(file);
     }
+  }
+
+  async request(command, args, {fileContent} = {}) {
+    const file = args?.file;
+    if (file) await this.synchronizeOpenFile(file, fileContent);
     const result = await this.send(command, args);
     if (this.closed || this.boundaryGeneration !== workspaceBoundaryGeneration) {
       throw new Error("Workspace boundary changed while the tsserver request was running");
@@ -1050,6 +1101,7 @@ class LspClient {
             hover: {contentFormat: ["markdown", "plaintext"]},
             definition: {linkSupport: true},
             references: {},
+            callHierarchy: {dynamicRegistration: false},
             documentSymbol: {hierarchicalDocumentSymbolSupport: true},
             publishDiagnostics: {relatedInformation: true},
             diagnostic: {dynamicRegistration: false, relatedDocumentSupport: false},
@@ -1313,6 +1365,38 @@ class LspClient {
     };
   }
 
+  async acquireTypescriptServerDiagnostics(file, documentText, documentVersion, documentContentFingerprint) {
+    const bridge = this.rawTsserver();
+    const commands = [
+      TYPESCRIPT_SERVER_COMMAND.SYNTACTIC_DIAGNOSTICS_SYNC,
+      TYPESCRIPT_SERVER_COMMAND.SEMANTIC_DIAGNOSTICS_SYNC,
+      TYPESCRIPT_SERVER_COMMAND.SUGGESTION_DIAGNOSTICS_SYNC,
+    ];
+    await bridge.request("projectInfo", {file, needFileNameList: false}, {fileContent: documentText});
+    const groups = [];
+    for (const command of commands) {
+      groups.push(await bridge.request(command, {file, includeLinePosition: true}, {fileContent: documentText}));
+    }
+    const items = groups.flat().map(normalizeTsserverDiagnostic).filter(Boolean);
+    const currentText = await readFile(file, "utf8").catch(() => undefined);
+    const uri = toUri(file);
+    const currentDocument = this.documents.get(uri);
+    const snapshotConfirmed =
+      currentText !== undefined &&
+      textFingerprint(currentText) === documentContentFingerprint &&
+      currentDocument?.version === documentVersion &&
+      textFingerprint(currentDocument.text) === documentContentFingerprint;
+    return {
+      items,
+      documentVersion,
+      reportedDocumentVersion: undefined,
+      reportReceived: true,
+      sourceReport: undefined,
+      snapshotConfirmed,
+      providerKind: DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER,
+    };
+  }
+
   async diagnostics(file) {
     const uri = await this.syncDocument(file);
     const document = this.documents.get(uri);
@@ -1331,10 +1415,11 @@ class LspClient {
       completed: false,
       sourceReport: undefined,
     };
-    acquisition.promise = this.acquireDiagnostics(uri, documentVersion, documentContentFingerprint).then(async (report) => {
+    acquisition.promise = this.acquireDiagnostics(uri, documentVersion, documentContentFingerprint).then(async (initialReport) => {
       const currentText = await readFile(fromUri(uri), "utf8").catch(() => undefined);
       const contentStillCurrent = currentText !== undefined && textFingerprint(currentText) === documentContentFingerprint;
-      const freshness = !contentStillCurrent
+      let report = initialReport;
+      let freshness = !contentStillCurrent
         ? DIAGNOSTIC_FRESHNESS.DIFFERENT_CONTENT
         : report.snapshotConfirmed
           ? DIAGNOSTIC_FRESHNESS.CURRENT
@@ -1345,14 +1430,27 @@ class LspClient {
             : report.reportedDocumentVersion === documentVersion
               ? DIAGNOSTIC_FRESHNESS.CURRENT
               : DIAGNOSTIC_FRESHNESS.DIFFERENT_VERSION;
+      if (freshness !== DIAGNOSTIC_FRESHNESS.CURRENT && contentStillCurrent && this.kind !== LANGUAGE_ID.VUE) {
+        try {
+          report = await this.acquireTypescriptServerDiagnostics(fromUri(uri), documentText, documentVersion, documentContentFingerprint);
+          freshness = report.snapshotConfirmed ? DIAGNOSTIC_FRESHNESS.CURRENT : DIAGNOSTIC_FRESHNESS.DIFFERENT_CONTENT;
+        } catch {
+          report = initialReport;
+        }
+      }
       acquisition.completed = true;
       acquisition.sourceReport = report.sourceReport;
       const newerPublishedReport = report.sourceReport && this.diagnosticsCache.get(uri) !== report.sourceReport;
-      if ((freshness !== DIAGNOSTIC_FRESHNESS.CURRENT || newerPublishedReport) && this.diagnosticAcquisitions.get(uri) === acquisition) {
+      const directSnapshot = report.providerKind === DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER;
+      if (
+        (freshness !== DIAGNOSTIC_FRESHNESS.CURRENT || newerPublishedReport || directSnapshot) &&
+        this.diagnosticAcquisitions.get(uri) === acquisition
+      ) {
         this.diagnosticAcquisitions.delete(uri);
       }
       return {
         ...report,
+        providerKind: report.providerKind || this.kind,
         freshness,
         documentText,
         documentContentFingerprint,
@@ -1695,7 +1793,90 @@ async function typescriptProjectEvidence(context) {
   }
 }
 
-function unresolvedReference(candidateLocation, identifier, result, reason, failure) {
+function classifyIdentifierNode(node, ts) {
+  const parent = node.parent;
+  for (let current = parent; current; current = current.parent) {
+    if (ts.isImportDeclaration(current) || ts.isExportDeclaration(current)) return UNRESOLVED_REFERENCE_CONTEXT.IMPORT_EXPORT;
+  }
+  if (ts.isCallExpression(parent) || ts.isNewExpression(parent)) return UNRESOLVED_REFERENCE_CONTEXT.CALL;
+  if (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) return UNRESOLVED_REFERENCE_CONTEXT.MEMBER_ACCESS;
+  if (
+    (ts.isPropertyAssignment(parent) || ts.isShorthandPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) &&
+    parent.name === node
+  ) {
+    return UNRESOLVED_REFERENCE_CONTEXT.PROPERTY_KEY;
+  }
+  if (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent) ||
+      ts.isParameter(parent)) &&
+    parent.name === node
+  ) {
+    return UNRESOLVED_REFERENCE_CONTEXT.DECLARATION;
+  }
+  return UNRESOLVED_REFERENCE_CONTEXT.IDENTIFIER_USE;
+}
+
+function identifierContextInSource(text, file, offset, identifier, ts) {
+  const sourceFile = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    languageId(file).includes(LANGUAGE_ID.JAVASCRIPT) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
+  );
+  let match;
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && node.text === identifier && node.getStart(sourceFile) <= offset && node.getEnd() >= offset) match = node;
+    if (!match && node.getFullStart() <= offset && node.getEnd() >= offset) ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return match ? classifyIdentifierNode(match, ts) : UNRESOLVED_REFERENCE_CONTEXT.STRING_OR_COMMENT;
+}
+
+async function unresolvedReferenceContext(candidateLocation, identifier) {
+  try {
+    const text = await readFile(candidateLocation.file, "utf8");
+    const offset = textOffsetAtPosition(text, candidateLocation.range.start.line, candidateLocation.range.start.column);
+    const {parseVueSfc, ts} = await vueParsingDependencies();
+    if (path.extname(candidateLocation.file).toLowerCase() !== SOURCE_EXTENSION.VUE) {
+      return identifierContextInSource(text, candidateLocation.file, offset, identifier, ts);
+    }
+    const {descriptor, errors} = parseVueSfc(text, {filename: candidateLocation.file});
+    if (errors.length > 0) return UNRESOLVED_REFERENCE_CONTEXT.UNKNOWN;
+    if (descriptor.template && offset >= descriptor.template.loc.start.offset && offset <= descriptor.template.loc.end.offset) {
+      return UNRESOLVED_REFERENCE_CONTEXT.VUE_TEMPLATE;
+    }
+    for (const block of [descriptor.script, descriptor.scriptSetup].filter(Boolean)) {
+      if (offset < block.loc.start.offset || offset > block.loc.end.offset) continue;
+      return identifierContextInSource(block.content, candidateLocation.file, offset - block.loc.start.offset, identifier, ts);
+    }
+    return UNRESOLVED_REFERENCE_CONTEXT.STRING_OR_COMMENT;
+  } catch {
+    return UNRESOLVED_REFERENCE_CONTEXT.UNKNOWN;
+  }
+}
+
+function unresolvedReferenceFollowUp(context, reason) {
+  if (context === UNRESOLVED_REFERENCE_CONTEXT.STRING_OR_COMMENT) return UNRESOLVED_REFERENCE_FOLLOW_UP.TREAT_AS_TEXT_ONLY;
+  if (context === UNRESOLVED_REFERENCE_CONTEXT.VUE_TEMPLATE) return UNRESOLVED_REFERENCE_FOLLOW_UP.CHECK_VUE_TEMPLATE_BINDING;
+  if (reason === UNRESOLVED_REFERENCE_REASON.CANDIDATE_OPENED_IN_INFERRED_TYPESCRIPT_PROJECT) {
+    return UNRESOLVED_REFERENCE_FOLLOW_UP.CHECK_TYPESCRIPT_PROJECT;
+  }
+  if (
+    reason === UNRESOLVED_REFERENCE_REASON.TYPESCRIPT_SERVER_REQUEST_FAILED ||
+    reason === UNRESOLVED_REFERENCE_REASON.CANDIDATE_ANALYSIS_FAILED
+  ) {
+    return UNRESOLVED_REFERENCE_FOLLOW_UP.INSPECT_PROVIDER_FAILURE;
+  }
+  return UNRESOLVED_REFERENCE_FOLLOW_UP.CHECK_SOURCE_BINDING;
+}
+
+async function unresolvedReference(candidateLocation, identifier, result, reason, failure) {
+  const sourceContext = await unresolvedReferenceContext(candidateLocation, identifier);
   return {
     file: candidateLocation.file,
     range: candidateLocation.range,
@@ -1703,6 +1884,8 @@ function unresolvedReference(candidateLocation, identifier, result, reason, fail
     owningWorkspace: result?.context?.workspaceRoot,
     typescriptProject: result?.project,
     reason,
+    sourceContext,
+    suggestedFollowUp: unresolvedReferenceFollowUp(sourceContext, reason),
     attemptedMethods: result?.attempts?.map(publicDefinitionMethod) || [
       DEFINITION_RESOLUTION_METHOD.LANGUAGE_SERVER,
       DEFINITION_RESOLUTION_METHOD.TYPESCRIPT_SERVER,
@@ -1749,7 +1932,7 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
       if (result.via === INTERNAL_RESOLUTION_SOURCE.UNRESOLVED) {
         unresolvedCandidateCount++;
         unresolvedCandidates.push(
-          unresolvedReference(
+          await unresolvedReference(
             candidateLocation,
             token.identifier,
             result,
@@ -1771,7 +1954,7 @@ async function crossWorkspaceReferences(context, line, column, maxCandidates, kn
     } catch (error) {
       unresolvedCandidateCount++;
       unresolvedCandidates.push(
-        unresolvedReference(
+        await unresolvedReference(
           candidateLocation,
           token.identifier,
           undefined,
@@ -1904,12 +2087,252 @@ async function collectReferences(context, line, column, includeDeclaration, cros
 const referenceSetsById = new Map();
 const referenceSetIdByKey = new Map();
 const changedReferenceSetsById = new Map();
+const callHierarchySetsById = new Map();
+const callHierarchySetIdByKey = new Map();
 
 function invalidateWorkspaceBoundaryState() {
   for (const [key, entry] of [...clients.entries()]) closeClientEntry(key, entry);
   referenceSetsById.clear();
   referenceSetIdByKey.clear();
   changedReferenceSetsById.clear();
+  callHierarchySetsById.clear();
+  callHierarchySetIdByKey.clear();
+}
+
+function normalizeCallHierarchyItem(item) {
+  if (!item?.uri?.startsWith("file:") || !item.range || !item.selectionRange) return undefined;
+  try {
+    const file = realpathSync(fromUri(item.uri));
+    if (!workspaceBoundaryFor(file)) return undefined;
+    return {
+      file,
+      name: item.name,
+      detail: item.detail,
+      kind: symbolKinds[item.kind - 1] || item.kind,
+      range: displayRange(item.range),
+      selectionRange: displayRange(item.selectionRange),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function callHierarchyNodeKey(node) {
+  return `${fileIdentity(node.file)}:${node.selectionRange.start.line}:${node.selectionRange.start.column}:${node.name}`;
+}
+
+async function collectCallHierarchy(context, line, column, direction, maxDepth) {
+  let prepared;
+  try {
+    prepared = await context.client.textRequest(LSP_METHOD.PREPARE_CALL_HIERARCHY, context.file, {
+      position: lspPosition(line, column),
+    });
+  } catch (error) {
+    return {
+      nodes: [],
+      edges: [],
+      unresolved: [
+        {
+          reason: CALL_HIERARCHY_UNRESOLVED_REASON.PROVIDER_REQUEST_FAILED,
+          file: context.file,
+          range: {start: {line, column}},
+          failure: error instanceof Error ? error.message : String(error),
+        },
+      ],
+      cyclesDetected: 0,
+      evidenceFiles: [context.file, ...workspaceConfigurationFiles(context.workspaceRoot, context.repositoryRoot)],
+    };
+  }
+  const roots = Array.isArray(prepared) ? prepared : prepared ? [prepared] : [];
+  const nodesByKey = new Map();
+  const edges = [];
+  const unresolved = [];
+  let cyclesDetected = 0;
+  const requestedDirections =
+    direction === CALL_HIERARCHY_DIRECTION.BOTH ? [CALL_HIERARCHY_DIRECTION.INCOMING, CALL_HIERARCHY_DIRECTION.OUTGOING] : [direction];
+  if (roots.length === 0) {
+    return {
+      nodes: [],
+      edges: [],
+      unresolved: [{reason: CALL_HIERARCHY_UNRESOLVED_REASON.ITEM_NOT_FOUND, file: context.file, range: {start: {line, column}}}],
+      cyclesDetected,
+      evidenceFiles: [context.file, ...workspaceConfigurationFiles(context.workspaceRoot, context.repositoryRoot)],
+    };
+  }
+  for (const traversalDirection of requestedDirections) {
+    const queue = roots.map((item) => ({item, depth: 0}));
+    const expanded = new Set();
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const currentNode = normalizeCallHierarchyItem(current.item);
+      if (!currentNode) {
+        unresolved.push({
+          reason: CALL_HIERARCHY_UNRESOLVED_REASON.LOCATION_OUTSIDE_WORKSPACE_BOUNDARY,
+          direction: traversalDirection,
+          depth: current.depth,
+        });
+        continue;
+      }
+      const currentKey = callHierarchyNodeKey(currentNode);
+      nodesByKey.set(currentKey, currentNode);
+      if (current.depth >= maxDepth || expanded.has(currentKey)) continue;
+      expanded.add(currentKey);
+      const method = traversalDirection === CALL_HIERARCHY_DIRECTION.INCOMING ? LSP_METHOD.INCOMING_CALLS : LSP_METHOD.OUTGOING_CALLS;
+      let calls;
+      try {
+        calls = (await context.client.request(method, {item: current.item})) || [];
+      } catch (error) {
+        unresolved.push({
+          reason: CALL_HIERARCHY_UNRESOLVED_REASON.PROVIDER_REQUEST_FAILED,
+          direction: traversalDirection,
+          depth: current.depth + 1,
+          node: currentNode,
+          failure: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+      for (const call of calls) {
+        const relatedItem = traversalDirection === CALL_HIERARCHY_DIRECTION.INCOMING ? call.from : call.to;
+        const relatedNode = normalizeCallHierarchyItem(relatedItem);
+        if (!relatedNode) {
+          unresolved.push({
+            reason: CALL_HIERARCHY_UNRESOLVED_REASON.LOCATION_OUTSIDE_WORKSPACE_BOUNDARY,
+            direction: traversalDirection,
+            depth: current.depth + 1,
+            node: currentNode,
+          });
+          continue;
+        }
+        const relatedKey = callHierarchyNodeKey(relatedNode);
+        nodesByKey.set(relatedKey, relatedNode);
+        const caller = traversalDirection === CALL_HIERARCHY_DIRECTION.INCOMING ? relatedNode : currentNode;
+        const callee = traversalDirection === CALL_HIERARCHY_DIRECTION.INCOMING ? currentNode : relatedNode;
+        const cycle = expanded.has(relatedKey);
+        if (cycle) cyclesDetected++;
+        edges.push({
+          caller,
+          callee,
+          callSites: (call.fromRanges || []).map(displayRange),
+          callSiteFile: caller.file,
+          depth: current.depth + 1,
+          discoveryMethod: CALL_HIERARCHY_EVIDENCE.STATIC_PROVIDER_GRAPH,
+          cycle,
+        });
+        if (!cycle) queue.push({item: relatedItem, depth: current.depth + 1});
+      }
+    }
+  }
+  return {
+    nodes: [...nodesByKey.values()],
+    edges,
+    unresolved,
+    cyclesDetected,
+    evidenceFiles: [
+      ...new Set([
+        context.file,
+        ...[...nodesByKey.values()].map((node) => node.file),
+        ...workspaceConfigurationFiles(context.workspaceRoot, context.repositoryRoot),
+      ]),
+    ],
+  };
+}
+
+function callHierarchySetKey(context, line, column, direction, maxDepth) {
+  return JSON.stringify({repositoryRoot: context.repositoryRoot, file: context.file, line, column, direction, maxDepth});
+}
+
+function deleteCallHierarchySet(id, entry) {
+  callHierarchySetsById.delete(id);
+  if (entry && callHierarchySetIdByKey.get(entry.key) === id) callHierarchySetIdByKey.delete(entry.key);
+}
+
+function pruneCallHierarchySets(now = Date.now()) {
+  for (const [id, entry] of callHierarchySetsById) if (entry.expiresAt <= now) deleteCallHierarchySet(id, entry);
+  const oldest = [...callHierarchySetsById.entries()].sort((left, right) => left[1].lastUsedAt - right[1].lastUsedAt);
+  while (callHierarchySetsById.size > MAXIMUM_REFERENCE_SETS && oldest.length > 0) {
+    const [id, entry] = oldest.shift();
+    deleteCallHierarchySet(id, entry);
+  }
+}
+
+async function getCallHierarchySet(context, line, column, direction, maxDepth) {
+  const now = Date.now();
+  pruneCallHierarchySets(now);
+  const key = callHierarchySetKey(context, line, column, direction, maxDepth);
+  const existingId = callHierarchySetIdByKey.get(key);
+  const existing = existingId ? callHierarchySetsById.get(existingId) : undefined;
+  if (existing) {
+    const freshness = await verifyReferenceSetFreshness(existing);
+    if (freshness.current) {
+      existing.lastUsedAt = now;
+      existing.expiresAt = now + REFERENCE_SET_TTL_MS;
+      existing.repositorySourceInventory = freshness.repositorySourceInventory;
+      return {...existing, reused: true};
+    }
+    deleteCallHierarchySet(existing.id, existing);
+  }
+  const stable = await collectStableSnapshot({
+    attempts: DEFAULT.COLLECTION_STABILITY_ATTEMPTS,
+    collect: () => collectCallHierarchy(context, line, column, direction, maxDepth),
+    inventory: () => repositorySourceInventory(context.repositoryRoot),
+    sameInventory: sameRepositoryInventory,
+    fingerprint: (analysis) => fingerprintFiles(analysis.evidenceFiles),
+  });
+  if (!stable) throw new RepositoryChangedDuringCollectionError(context.repositoryRoot, DEFAULT.COLLECTION_STABILITY_ATTEMPTS);
+  const id = `call-hierarchy-${randomUUID()}`;
+  const entry = {
+    id,
+    key,
+    analysis: stable.value,
+    repositoryRoot: context.repositoryRoot,
+    createdAt: now,
+    lastUsedAt: now,
+    expiresAt: now + REFERENCE_SET_TTL_MS,
+    fileFingerprints: stable.fingerprints,
+    repositorySourceInventory: stable.inventory,
+  };
+  callHierarchySetsById.set(id, entry);
+  callHierarchySetIdByKey.set(key, id);
+  return {...entry, reused: false};
+}
+
+async function getCallHierarchySetById(id) {
+  await ensureWorkspaceBoundaryReady();
+  pruneCallHierarchySets();
+  const entry = callHierarchySetsById.get(id);
+  if (!entry) {
+    const error = new Error("Call-hierarchy set expired or was not found. Collect the hierarchy again.");
+    error.code = ERROR_CODE.CALL_HIERARCHY_SET_NOT_FOUND_OR_EXPIRED;
+    error.details = {callHierarchySetId: id};
+    throw error;
+  }
+  const freshness = await verifyReferenceSetFreshness(entry);
+  if (!freshness.current) {
+    deleteCallHierarchySet(id, entry);
+    const error = new Error("Call-hierarchy set no longer matches current repository state. Collect the hierarchy again.");
+    error.code = ERROR_CODE.CALL_HIERARCHY_SET_CONTENT_CHANGED;
+    error.details = {callHierarchySetId: id, ...freshness.details};
+    throw error;
+  }
+  entry.lastUsedAt = Date.now();
+  entry.expiresAt = entry.lastUsedAt + REFERENCE_SET_TTL_MS;
+  entry.repositorySourceInventory = freshness.repositorySourceInventory;
+  return entry;
+}
+
+function presentCallHierarchySet(entry, offset, pageSize) {
+  const start = Math.max(0, offset);
+  const edges = entry.analysis.edges.slice(start, start + pageSize);
+  const nextOffset = start + edges.length;
+  return {
+    edges,
+    presentation: {
+      mode: PRESENTATION_MODE.PAGE,
+      edgesAvailable: entry.analysis.edges.length,
+      edgesReturned: edges.length,
+      nextCursor: nextOffset < entry.analysis.edges.length ? String(nextOffset) : undefined,
+    },
+  };
 }
 
 class ReferenceSetStaleError extends Error {
@@ -2078,6 +2501,10 @@ function invalidateReferenceSetsForFile(file) {
       changedFiles: [file],
     });
     deleteReferenceSet(id, entry);
+  }
+  for (const [id, entry] of callHierarchySetsById) {
+    const belongsToRepository = file === entry.repositoryRoot || file.startsWith(`${entry.repositoryRoot}${path.sep}`);
+    if (belongsToRepository) deleteCallHierarchySet(id, entry);
   }
 }
 
@@ -2387,7 +2814,12 @@ async function auditSymbolAtPosition(file, root, line, column, options) {
     options.includeDiagnostics ? context.client.diagnostics(context.file) : Promise.resolve([]),
   ]);
   const provenance = options.includeDiagnostics
-    ? await diagnosticProvenance(context.file, context.client.kind, rawDiagnostics.documentText, rawDiagnostics.items)
+    ? await diagnosticProvenance(
+        context.file,
+        rawDiagnostics.providerKind || context.client.kind,
+        rawDiagnostics.documentText,
+        rawDiagnostics.items,
+      )
     : undefined;
   const diagnostics = options.includeDiagnostics ? normalizeDiagnostics(rawDiagnostics.items, options.maxDiagnostics, provenance) : [];
   let effectiveHover = hover;
@@ -3149,7 +3581,12 @@ server.registerTool(
     try {
       const context = await clientForFile(file, root);
       const report = await context.client.diagnostics(context.file);
-      const provenance = await diagnosticProvenance(context.file, context.client.kind, report.documentText, report.items);
+      const provenance = await diagnosticProvenance(
+        context.file,
+        report.providerKind || context.client.kind,
+        report.documentText,
+        report.items,
+      );
       const diagnostics = normalizeDiagnostics(report.items, maxResults, provenance);
       const versionConfirmed = report.freshness === DIAGNOSTIC_FRESHNESS.CURRENT;
       const diagnosticReport = {
@@ -3193,6 +3630,108 @@ server.registerTool(
           itemsReturnedAreSubset: diagnostics.length < report.items.length,
         },
         continueWith: [TOOL.DEFINITION, TOOL.HOVER],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.CALL_HIERARCHY,
+  {
+    description: TOOL_DESCRIPTION[TOOL.CALL_HIERARCHY],
+    inputSchema: {
+      ...positionSchema,
+      direction: z.enum(Object.values(CALL_HIERARCHY_DIRECTION)).default(CALL_HIERARCHY_DIRECTION.BOTH),
+      maxDepth: z
+        .number()
+        .int()
+        .min(1)
+        .max(DEFAULT.CALL_HIERARCHY_MAXIMUM_DEPTH)
+        .default(1)
+        .describe(`Maximum static traversal depth; at most ${DEFAULT.CALL_HIERARCHY_MAXIMUM_DEPTH}`),
+      pageSize: z.number().int().min(1).optional().describe(`Number of edges to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`),
+    },
+    annotations: readOnly,
+  },
+  async ({file, root, line, column, direction, maxDepth, pageSize}) => {
+    const tool = TOOL.CALL_HIERARCHY;
+    try {
+      const context = await clientForFile(file, root);
+      const entry = await getCallHierarchySet(context, line, column, direction, maxDepth);
+      const page = presentCallHierarchySet(entry, 0, pageSize || DEFAULT.REFERENCE_PAGE_SIZE);
+      return toolResult(tool, {
+        request: {
+          file: context.file,
+          line,
+          column,
+          searchScope: "static-call-graph",
+          direction,
+          maxDepth,
+          pageSize: pageSize || DEFAULT.REFERENCE_PAGE_SIZE,
+        },
+        result: {
+          callHierarchySetId: entry.id,
+          evidenceType: CALL_HIERARCHY_EVIDENCE.STATIC_PROVIDER_GRAPH,
+          runtimeReachability: CALL_HIERARCHY_EVIDENCE.RUNTIME_REACHABILITY_NOT_ESTABLISHED,
+          nodesFound: entry.analysis.nodes.length,
+          edgesFound: entry.analysis.edges.length,
+          cyclesDetected: entry.analysis.cyclesDetected,
+          unresolvedNodes: entry.analysis.unresolved,
+          edges: page.edges,
+        },
+        collection: {
+          status: entry.analysis.unresolved.length > 0 ? COLLECTION_STATUS.PARTIAL : COLLECTION_STATUS.COMPLETE,
+          stoppedByLimit: false,
+          depthLimit: maxDepth,
+          reusedPreviousCollection: entry.reused,
+          contentFreshness: CONTENT_FRESHNESS.VERIFIED_CURRENT,
+          contentFilesChecked: entry.fileFingerprints.length,
+          repositoryInventoryFreshness: CONTENT_FRESHNESS.VERIFIED_REPOSITORY_SOURCE_INVENTORY,
+          repositorySourceFilesChecked: entry.repositorySourceInventory.sourceFileCount,
+        },
+        presentation: page.presentation,
+        continueWith: page.presentation.nextCursor ? [TOOL.CALL_HIERARCHY_PAGE, TOOL.DEFINITION] : [TOOL.DEFINITION],
+      });
+    } catch (error) {
+      return toolError(tool, error);
+    }
+  },
+);
+
+server.registerTool(
+  TOOL.CALL_HIERARCHY_PAGE,
+  {
+    description: TOOL_DESCRIPTION[TOOL.CALL_HIERARCHY_PAGE],
+    inputSchema: {
+      callHierarchySetId: z.string().min(1).describe(`Identifier returned by ${TOOL.CALL_HIERARCHY}`),
+      cursor: z.string().regex(/^\d+$/).default("0").describe("Cursor returned by the previous call-hierarchy page"),
+      pageSize: z.number().int().min(1).optional().describe(`Number of edges to return; default ${DEFAULT.REFERENCE_PAGE_SIZE}`),
+    },
+    annotations: readOnly,
+  },
+  async ({callHierarchySetId, cursor, pageSize}) => {
+    const tool = TOOL.CALL_HIERARCHY_PAGE;
+    try {
+      const entry = await getCallHierarchySetById(callHierarchySetId);
+      const page = presentCallHierarchySet(entry, Number(cursor), pageSize || DEFAULT.REFERENCE_PAGE_SIZE);
+      return toolResult(tool, {
+        request: {callHierarchySetId, cursor, pageSize: pageSize || DEFAULT.REFERENCE_PAGE_SIZE},
+        result: {
+          evidenceType: CALL_HIERARCHY_EVIDENCE.STATIC_PROVIDER_GRAPH,
+          runtimeReachability: CALL_HIERARCHY_EVIDENCE.RUNTIME_REACHABILITY_NOT_ESTABLISHED,
+          edgesFound: entry.analysis.edges.length,
+          edges: page.edges,
+        },
+        collection: {
+          status: entry.analysis.unresolved.length > 0 ? COLLECTION_STATUS.PARTIAL : COLLECTION_STATUS.COMPLETE,
+          stoppedByLimit: false,
+          contentFreshness: CONTENT_FRESHNESS.VERIFIED_CURRENT,
+          contentFilesChecked: entry.fileFingerprints.length,
+        },
+        presentation: page.presentation,
+        continueWith: page.presentation.nextCursor ? [TOOL.CALL_HIERARCHY_PAGE] : [TOOL.DEFINITION],
       });
     } catch (error) {
       return toolError(tool, error);
@@ -3592,6 +4131,8 @@ async function shutdown() {
   referenceSetsById.clear();
   referenceSetIdByKey.clear();
   changedReferenceSetsById.clear();
+  callHierarchySetsById.clear();
+  callHierarchySetIdByKey.clear();
   pendingSessionRootAuthorizations.clear();
   sessionWorkspaceRoots = [];
   await server.close().catch(() => undefined);

@@ -20,6 +20,8 @@ Supported source extensions are `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.
 | Exact source position                                | `lsp_definition`                | Resolved declaration                                     | `lsp_hover`, `lsp_count_references`                |
 | Exact source position                                | `lsp_hover`                     | Inferred type and documentation                          | `lsp_definition`, `lsp_audit_symbol`               |
 | One changed file                                     | `lsp_diagnostics`               | Focused diagnostics                                      | `lsp_definition`, `lsp_hover`                      |
+| Exact callable position                              | `lsp_call_hierarchy`            | Bounded static incoming/outgoing call graph              | `lsp_call_hierarchy_page`, direct source reading   |
+| Existing `callHierarchySetId`                        | `lsp_call_hierarchy_page`       | Later freshness-checked call edges                       | `lsp_call_hierarchy_page`, direct source reading   |
 | Exact symbol text, unknown scope                     | `lsp_count_text_matches`        | Text-match and file counts without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
 | Exact symbol name, broad scope                       | `lsp_count_named_symbol`        | Small count response                                     | `lsp_audit_named_symbol`, `lsp_reference_page`     |
 | Exact source position, broad scope                   | `lsp_count_references`          | Small count response                                     | `lsp_audit_symbol`, `lsp_reference_page`           |
@@ -138,7 +140,7 @@ Omitted `maxCandidates` and `maxDefinitions` mean `{mode: unlimited}`. A supplie
 
 `matchesWhoseDefinitionCouldNotBeResolved > 0` keeps uncertainty visible and produces `collection.status: partial` even when accounting is complete.
 
-Use the reported `referenceSetId` with `lsp_unresolved_reference_page` when unresolved candidates are material. The identifier appears once in an initial count, audit, or reference response and is carried in later page requests rather than repeated in each page result. Read `reason` and `typescriptProject` literally. `candidate-opened-in-inferred-typescript-project` proves tsserver did not associate that file with a configured project; other reasons do not establish that an alias, exclusion, or project configuration caused the failure.
+Use the reported `referenceSetId` with `lsp_unresolved_reference_page` when unresolved candidates are material. The identifier appears once in an initial count, audit, or reference response and is carried in later page requests rather than repeated in each page result. Read `reason`, `typescriptProject`, `sourceContext`, and `suggestedFollowUp` literally. Source context classifies syntax at the text match; it does not establish symbol identity. `candidate-opened-in-inferred-typescript-project` proves tsserver did not associate that file with a configured project; other reasons do not establish that an alias, exclusion, or project configuration caused the failure.
 
 ### Freshness
 
@@ -148,7 +150,9 @@ Diagnostics identify the analyzed document with a version and SHA-256 fingerprin
 
 `evidence.status: untrusted` keeps `diagnosticsForCurrentDocument` null and produces `collection.status: partial`. `unconfirmedDiagnosticReportAvailable: true` means the provider emitted a report that is available only as context under `unconfirmedDiagnosticReport`; it is not current-document, compile, or type validation. `false` means no unconfirmed provider report was available. In both cases, follow `diagnosticUse.guidance` and do not interpret missing or empty unconfirmed items as a clean file.
 
-`current-document-version-confirmed` means a push report carried the current document version. `current-document-snapshot-confirmed` means a provider-supported pull completed while the synchronized and filesystem content remained unchanged. `document-content-changed-during-diagnostic-acquisition` is untrusted evidence and requires a new diagnostic call after the file settles.
+`current-document-version-confirmed` means a push report carried the current document version. `current-document-snapshot-confirmed` means a provider pull or direct tsserver diagnostic request completed while the synchronized and filesystem content remained unchanged. `document-content-changed-during-diagnostic-acquisition` is untrusted evidence and requires a new diagnostic call after the file settles.
+
+`lsp_call_hierarchy` traverses static provider edges up to the requested `maxDepth`; `direction` may be `incoming`, `outgoing`, or `both`. Read `unresolvedNodes` and `cyclesDetected`, then page with the returned `callHierarchySetId`. `runtimeReachability: runtime-reachability-not-established` is a hard boundary: inspect route registration, dependency injection, configuration, dynamic calls, and focused runtime tests separately.
 
 Read `result.provenance.provider` and `result.provenance.documentLanguage` as report-wide facts. `embeddedRegion` and `embeddedLanguage` belong to each diagnostic item. `document` means the diagnostic belongs to a regular JavaScript ecosystem document. Vue regions are reported only when the diagnostic range is contained by a parsed SFC block; `unknown` preserves ambiguity. A provider-native style diagnostic does not establish complete CSS, preprocessor, or utility-class semantics.
 

@@ -6,6 +6,8 @@ export const TOOL = Object.freeze({
   DEFINITION: "lsp_definition",
   HOVER: "lsp_hover",
   DIAGNOSTICS: "lsp_diagnostics",
+  CALL_HIERARCHY: "lsp_call_hierarchy",
+  CALL_HIERARCHY_PAGE: "lsp_call_hierarchy_page",
   COUNT_TEXT_MATCHES: "lsp_count_text_matches",
   COUNT_NAMED_SYMBOL: "lsp_count_named_symbol",
   COUNT_REFERENCES: "lsp_count_references",
@@ -149,6 +151,7 @@ export const VUE_SCRIPT_LANGUAGE = Object.freeze({
 });
 
 export const DIAGNOSTIC_PROVIDER = Object.freeze({
+  TYPESCRIPT_SERVER: "typescript-server",
   TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server",
   VUE_LANGUAGE_SERVER: "vue-language-server",
   UNKNOWN: COMMON_VALUE.UNKNOWN,
@@ -212,6 +215,8 @@ export const TOOL_DESCRIPTION = Object.freeze({
   [TOOL.HOVER]: `Returns inferred type information and documentation for one source position. Use ${TOOL.DEFINITION} for declaration identity.`,
   [TOOL.DIAGNOSTICS]:
     "Returns diagnostics for one file, separates unconfirmed context, and states whether the result is usable as current-document diagnostic evidence.",
+  [TOOL.CALL_HIERARCHY]: `Collects a bounded static incoming, outgoing, or bidirectional call graph from one source position. Reports provider gaps and cycles explicitly; use ${TOOL.CALL_HIERARCHY_PAGE} for later edges. This does not establish runtime reachability.`,
+  [TOOL.CALL_HIERARCHY_PAGE]: "Returns a page from a freshness-checked static call-hierarchy set.",
   [TOOL.COUNT_TEXT_MATCHES]: `Counts exact identifier text matches without semantic verification. Use ${TOOL.COUNT_NAMED_SYMBOL} or ${TOOL.AUDIT_NAMED_SYMBOL} to verify identity.`,
   [TOOL.COUNT_NAMED_SYMBOL]: `Returns exact-definition and verified-reference counts plus explicit semantic follow-up status for a symbol name. Use ${TOOL.AUDIT_NAMED_SYMBOL} for identity, signature, or file-hint binding verification and ${TOOL.REFERENCE_PAGE} with a returned referenceSetId for locations.`,
   [TOOL.COUNT_REFERENCES]: `Returns verified-reference counts for the symbol at one source position. Use ${TOOL.AUDIT_SYMBOL} for identity and signature or ${TOOL.REFERENCE_PAGE} with the returned referenceSetId for locations.`,
@@ -224,6 +229,9 @@ export const TOOL_DESCRIPTION = Object.freeze({
 });
 
 export const LSP_METHOD = Object.freeze({
+  PREPARE_CALL_HIERARCHY: "textDocument/prepareCallHierarchy",
+  INCOMING_CALLS: "callHierarchy/incomingCalls",
+  OUTGOING_CALLS: "callHierarchy/outgoingCalls",
   DOCUMENT_DIAGNOSTIC: "textDocument/diagnostic",
   EXECUTE_COMMAND: "workspace/executeCommand",
   PUBLISH_DIAGNOSTICS: "textDocument/publishDiagnostics",
@@ -236,6 +244,26 @@ export const LSP_COMMAND = Object.freeze({
 
 export const TYPESCRIPT_SERVER_COMMAND = Object.freeze({
   DEFINITION_AND_BOUND_SPAN: "definitionAndBoundSpan",
+  SYNTACTIC_DIAGNOSTICS_SYNC: "syntacticDiagnosticsSync",
+  SEMANTIC_DIAGNOSTICS_SYNC: "semanticDiagnosticsSync",
+  SUGGESTION_DIAGNOSTICS_SYNC: "suggestionDiagnosticsSync",
+});
+
+export const CALL_HIERARCHY_DIRECTION = Object.freeze({
+  INCOMING: "incoming",
+  OUTGOING: "outgoing",
+  BOTH: "both",
+});
+
+export const CALL_HIERARCHY_EVIDENCE = Object.freeze({
+  STATIC_PROVIDER_GRAPH: "static-language-server-call-graph",
+  RUNTIME_REACHABILITY_NOT_ESTABLISHED: "runtime-reachability-not-established",
+});
+
+export const CALL_HIERARCHY_UNRESOLVED_REASON = Object.freeze({
+  ITEM_NOT_FOUND: "call-hierarchy-item-not-found-at-source-position",
+  PROVIDER_REQUEST_FAILED: "call-hierarchy-provider-request-failed",
+  LOCATION_OUTSIDE_WORKSPACE_BOUNDARY: "call-hierarchy-location-outside-workspace-boundary",
 });
 
 export const LIMIT_MODE = Object.freeze({
@@ -346,6 +374,8 @@ export const ERROR_CODE = Object.freeze({
   WORKSPACE_ROOT_TOO_BROAD: "WORKSPACE_ROOT_TOO_BROAD",
   REFERENCE_SET_CONTENT_CHANGED: "REFERENCE_SET_CONTENT_CHANGED",
   REFERENCE_SET_NOT_FOUND_OR_EXPIRED: "REFERENCE_SET_NOT_FOUND_OR_EXPIRED",
+  CALL_HIERARCHY_SET_CONTENT_CHANGED: "CALL_HIERARCHY_SET_CONTENT_CHANGED",
+  CALL_HIERARCHY_SET_NOT_FOUND_OR_EXPIRED: "CALL_HIERARCHY_SET_NOT_FOUND_OR_EXPIRED",
   REPOSITORY_CHANGED_DURING_COLLECTION: "REPOSITORY_CHANGED_DURING_COLLECTION",
   RUNTIME_DEPENDENCY_MISSING: "RUNTIME_DEPENDENCY_MISSING",
   RUNTIME_REQUIREMENT_UNMET: "RUNTIME_REQUIREMENT_UNMET",
@@ -380,6 +410,26 @@ export const UNRESOLVED_REFERENCE_REASON = Object.freeze({
   TYPESCRIPT_SERVER_REQUEST_FAILED: "typescript-server-request-failed-after-language-server-returned-no-location",
   CANDIDATE_ANALYSIS_FAILED: "candidate-analysis-failed",
   CANDIDATE_OPENED_IN_INFERRED_TYPESCRIPT_PROJECT: "candidate-opened-in-inferred-typescript-project",
+});
+
+export const UNRESOLVED_REFERENCE_CONTEXT = Object.freeze({
+  CALL: "call-expression",
+  MEMBER_ACCESS: "member-access",
+  DECLARATION: "declaration",
+  IMPORT_EXPORT: "import-or-export",
+  PROPERTY_KEY: "property-key",
+  IDENTIFIER_USE: "identifier-use",
+  STRING_OR_COMMENT: "string-or-comment-text",
+  VUE_TEMPLATE: "vue-template-text",
+  UNKNOWN: COMMON_VALUE.UNKNOWN,
+});
+
+export const UNRESOLVED_REFERENCE_FOLLOW_UP = Object.freeze({
+  CHECK_SOURCE_BINDING: "check-source-binding-at-position",
+  CHECK_TYPESCRIPT_PROJECT: "check-typescript-project-configuration",
+  CHECK_VUE_TEMPLATE_BINDING: "check-vue-template-binding",
+  INSPECT_PROVIDER_FAILURE: "inspect-provider-failure",
+  TREAT_AS_TEXT_ONLY: "treat-as-text-only-candidate",
 });
 
 export const TYPESCRIPT_PROJECT_KIND = Object.freeze({
@@ -436,10 +486,10 @@ export const INTERNAL_RESOLUTION_SOURCE = Object.freeze({
 
 export const RESULT_SCHEMA = Object.freeze({
   NAME: PRODUCT.NAME,
-  VERSION: 7,
+  VERSION: 8,
 });
 
-export const SERVER_VERSION = "0.11.0";
+export const SERVER_VERSION = "0.12.0";
 
 export const REQUIRED_RUNTIME_COMPONENT = Object.freeze({
   TYPESCRIPT_LANGUAGE_SERVER: "typescript-language-server/lib/cli.mjs",
@@ -492,5 +542,6 @@ export const DEFAULT = Object.freeze({
   MCP_TOOL_TIMEOUT_SECONDS: 300,
   INVENTORY_STAT_CONCURRENCY: 32,
   COLLECTION_STABILITY_ATTEMPTS: 2,
+  CALL_HIERARCHY_MAXIMUM_DEPTH: 6,
   PROCESS_ARGUMENT_OFFSET: 2,
 });

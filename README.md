@@ -30,7 +30,7 @@ For each file, it identifies the owning workspace and uses the corresponding Typ
 
 ## Project Status
 
-Version `0.11.0` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
+Version `0.12.0` is the current release. APIs and result contracts may evolve while the project remains on the `0.x` release line. See the [roadmap](ROADMAP.md) for areas under consideration.
 
 ## Runtime
 
@@ -79,6 +79,8 @@ Tools are ordered from smaller responses to deeper evidence:
 | `lsp_definition`                | Definition resolution at a position                       | `lsp_hover`, `lsp_count_references`                |
 | `lsp_hover`                     | Inferred type and documentation                           | `lsp_definition`, `lsp_audit_symbol`               |
 | `lsp_diagnostics`               | Focused diagnostics for one file                          | `lsp_definition`, `lsp_hover`                      |
+| `lsp_call_hierarchy`            | Bounded static incoming or outgoing call graph            | `lsp_call_hierarchy_page`, `lsp_definition`        |
+| `lsp_call_hierarchy_page`       | Later edges from the freshness-checked call graph         | `lsp_call_hierarchy_page`, `lsp_definition`        |
 | `lsp_count_text_matches`        | Exact identifier text count without semantic verification | `lsp_count_named_symbol`, `lsp_audit_named_symbol` |
 | `lsp_count_named_symbol`        | Definition and reference counts by name                   | `lsp_audit_named_symbol`, `lsp_reference_page`     |
 | `lsp_count_references`          | Reference counts at a position                            | `lsp_audit_symbol`, `lsp_reference_page`           |
@@ -140,6 +142,10 @@ Omitting `maxCandidates` or `maxDefinitions` requests unlimited collection. `pag
 Reusable reference sets verify participating file content and the repository
 source inventory before returning another page. Added, removed, renamed, or
 changed sources invalidate stale evidence instead of silently reusing it.
+
+Call-hierarchy sets use the same freshness checks. They provide a bounded static
+provider graph with explicit depth, cycles, and unresolved nodes; they do not
+establish runtime reachability or dynamic route composition.
 
 Diagnostics are current only when the owning provider confirms the analyzed
 document snapshot. Unconfirmed reports remain isolated and explicitly

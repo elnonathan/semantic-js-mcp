@@ -4,6 +4,14 @@ Semantic JS MCP increments `producer.resultSchemaVersion` when a tool-result
 shape changes incompatibly. Consumers should validate this value before parsing
 tool-specific evidence.
 
+## Schema 8
+
+Schema 8 adds paginated call-hierarchy results, direct `typescript-server`
+diagnostic provenance, and `sourceContext` plus `suggestedFollowUp` on unresolved
+reference candidates. Call hierarchy is bounded static provider evidence and
+does not establish runtime reachability. Diagnostic evidence is current only
+when the exact synchronized content remains unchanged through acquisition.
+
 ## Schema 7
 
 Schema 7 adds `result.semanticEvidence` to named counts and audits. Its

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-26
+
+### Added
+
+- Add freshness-checked, paginated static call-hierarchy tools with bounded incoming, outgoing, or bidirectional traversal, explicit cycles and provider gaps, and a literal warning that runtime reachability is not established.
+- Classify unresolved reference candidates by source context and return a literal suggested follow-up, separating string/comment text and Vue template text from source bindings.
+
+### Changed
+
+- Confirm TypeScript and JavaScript diagnostics directly against the exact `tsserver` document snapshot when the language server omits a document version. Content changes during acquisition remain untrusted, and Vue keeps its provider-native diagnostic path.
+- Update bundled transitive dependencies to patched releases, including `fast-uri` 3.1.6 and `hono` 4.13.5.
+
 ## [0.11.0] - 2026-07-23
 
 ### Security

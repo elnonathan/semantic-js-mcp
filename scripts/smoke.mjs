@@ -22,6 +22,8 @@ import {diagnosticUseSummary} from "../lib/diagnostic-evidence.mjs";
 import {removeTemporaryDirectory} from "../lib/temporary-directory.mjs";
 import {
   ACCOUNTING_STATUS,
+  CALL_HIERARCHY_DIRECTION,
+  CALL_HIERARCHY_EVIDENCE,
   COLLECTION_STATUS,
   CONTENT_FRESHNESS,
   DEFINITION_MATCH,
@@ -50,6 +52,8 @@ import {
   TOOL_DESCRIPTION,
   TOOL_ORDER,
   UNRESOLVED_REFERENCE_REASON,
+  UNRESOLVED_REFERENCE_CONTEXT,
+  UNRESOLVED_REFERENCE_FOLLOW_UP,
 } from "../protocol.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -246,6 +250,7 @@ const unrelatedFile = path.join(src, "unrelated.ts");
 const unresolvedFile = path.join(src, "unresolved.ts");
 const futureReferenceFile = path.join(src, "future-reference.ts");
 const decoratedFile = path.join(src, "decorated.ts");
+const callChainFile = path.join(src, "call-chain.ts");
 const consumer = path.join(workspace, "packages", "consumer");
 const consumerSrc = path.join(consumer, "src");
 const consumerAliasFile = path.join(consumerSrc, "alias-usage.ts");
@@ -312,6 +317,16 @@ await writeFile(
     "export function registered<T extends new (...args: any[]) => object>(target: T): T { return target; }",
     "@registered",
     "export class DecoratedService { run(): number { return 1; } }",
+  ].join("\n"),
+);
+await writeFile(
+  callChainFile,
+  [
+    "export function service(): number { return 1; }",
+    "export function controller(): number { return service(); }",
+    "export function middleware(): number { return controller(); }",
+    "export function route(): number { return middleware(); }",
+    "export function recursive(value: number): number { return value > 0 ? recursive(value - 1) : 0; }",
   ].join("\n"),
 );
 await writeFile(
@@ -497,6 +512,11 @@ try {
     "Concurrent diagnostics disagreed about snapshot evidence",
   );
   const initialDiagnosticsVerified = initialDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED;
+  assert(initialDiagnosticsVerified, "TypeScript diagnostics were not confirmed against the current document snapshot");
+  assert(
+    initialDiagnostics.result.provenance.provider === DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER,
+    "Verified TypeScript diagnostics did not report the direct tsserver provider",
+  );
   assertDiagnosticUse(initialDiagnostics.result, "Initial diagnostics returned inconsistent usage guidance");
   assert(
     initialDiagnostics.collection.status === (initialDiagnosticsVerified ? COLLECTION_STATUS.COMPLETE : COLLECTION_STATUS.PARTIAL),
@@ -526,6 +546,58 @@ try {
       );
     }
   }
+
+  const callHierarchy = assertResult(
+    await client.callTool({
+      name: TOOL.CALL_HIERARCHY,
+      arguments: {
+        file: callChainFile,
+        root: workspace,
+        line: 4,
+        column: 17,
+        direction: CALL_HIERARCHY_DIRECTION.OUTGOING,
+        maxDepth: 3,
+        pageSize: 1,
+      },
+    }),
+    TOOL.CALL_HIERARCHY,
+  );
+  assert(
+    callHierarchy.result.evidenceType === CALL_HIERARCHY_EVIDENCE.STATIC_PROVIDER_GRAPH,
+    "Call hierarchy omitted its static evidence type",
+  );
+  assert(
+    callHierarchy.result.runtimeReachability === CALL_HIERARCHY_EVIDENCE.RUNTIME_REACHABILITY_NOT_ESTABLISHED,
+    "Call hierarchy implied runtime reachability",
+  );
+  assert(callHierarchy.result.edgesFound === 3, `Call hierarchy did not trace route to service: ${JSON.stringify(callHierarchy.result)}`);
+  assert(
+    callHierarchy.presentation.edgesReturned === 1 && callHierarchy.presentation.nextCursor === "1",
+    "Call hierarchy was not paginated",
+  );
+  const callHierarchyPage = assertResult(
+    await client.callTool({
+      name: TOOL.CALL_HIERARCHY_PAGE,
+      arguments: {callHierarchySetId: callHierarchy.result.callHierarchySetId, cursor: "1", pageSize: 2},
+    }),
+    TOOL.CALL_HIERARCHY_PAGE,
+  );
+  assert(callHierarchyPage.presentation.edgesReturned === 2, "Call-hierarchy page omitted later edges");
+  const recursiveCallHierarchy = assertResult(
+    await client.callTool({
+      name: TOOL.CALL_HIERARCHY,
+      arguments: {
+        file: callChainFile,
+        root: workspace,
+        line: 5,
+        column: 17,
+        direction: CALL_HIERARCHY_DIRECTION.OUTGOING,
+        maxDepth: 3,
+      },
+    }),
+    TOOL.CALL_HIERARCHY,
+  );
+  assert(recursiveCallHierarchy.result.cyclesDetected >= 1, "Recursive call hierarchy did not report its cycle");
 
   const textCount = assertResult(
     await client.callTool({
@@ -627,6 +699,25 @@ try {
   assert(
     unresolvedPage.result.candidates.every((candidate) => Object.values(UNRESOLVED_REFERENCE_REASON).includes(candidate.reason)),
     "Unresolved-reference page returned an unknown reason",
+  );
+  assert(
+    unresolvedPage.result.candidates.every((candidate) => Object.values(UNRESOLVED_REFERENCE_CONTEXT).includes(candidate.sourceContext)),
+    "Unresolved-reference page omitted actionable source context",
+  );
+  assert(
+    unresolvedPage.result.candidates.every((candidate) =>
+      Object.values(UNRESOLVED_REFERENCE_FOLLOW_UP).includes(candidate.suggestedFollowUp),
+    ),
+    "Unresolved-reference page omitted a literal follow-up",
+  );
+  assert(
+    unresolvedPage.result.candidates.some(
+      (candidate) =>
+        path.basename(candidate.file) === "unresolved.ts" &&
+        candidate.sourceContext === UNRESOLVED_REFERENCE_CONTEXT.STRING_OR_COMMENT &&
+        candidate.suggestedFollowUp === UNRESOLVED_REFERENCE_FOLLOW_UP.TREAT_AS_TEXT_ONLY,
+    ),
+    "String-only candidate was not separated from source bindings",
   );
   assert(
     unresolvedPage.result.candidates.every((candidate) => candidate.identifier === "repeatedTarget"),
@@ -996,14 +1087,18 @@ try {
   );
   const changedReport = changedDiagnostics.result.diagnosticsForCurrentDocument || changedDiagnostics.result.unconfirmedDiagnosticReport;
   assert(
-    changedDiagnostics.result.provenance.provider === DIAGNOSTIC_PROVIDER.TYPESCRIPT_LANGUAGE_SERVER &&
+    changedDiagnostics.result.provenance.provider === DIAGNOSTIC_PROVIDER.TYPESCRIPT_SERVER &&
       changedDiagnostics.result.provenance.documentLanguage === DIAGNOSTIC_LANGUAGE.TYPESCRIPT,
     "TypeScript diagnostics omitted provider or document-language provenance",
+  );
+  assert(
+    changedDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED,
+    "Changed TypeScript diagnostics were not snapshot-confirmed",
   );
   if (changedDiagnostics.result.evidence.status === EVIDENCE_STATUS.VERIFIED) {
     assert(
       changedReport.items.some((item) => item.message.includes("missingAfterDiagnosticChange")),
-      "Verified changed diagnostics did not report the introduced error",
+      `Verified changed diagnostics did not report the introduced error: ${JSON.stringify(changedReport.items)}`,
     );
   }
   assert(

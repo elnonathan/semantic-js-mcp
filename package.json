@@ -1,6 +1,6 @@
 {
   "name": "semantic-js-mcp",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Semantic understanding of JavaScript codebases for AI agents",
   "keywords": [
     "mcp",
